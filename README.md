@@ -282,6 +282,20 @@ Choose the previous deployment in the boot menu if the new one cannot boot.
 Do not add host RPM layers; change `Containerfile` and rebuild instead.
 These initial publishing instructions do not configure image-signature verification.
 
+On the direct install's single-root-partition layout, the GPT generator can
+create a `boot.automount` that conflicts with OSTree's `/sysroot/boot` bind mount.
+After its idle timeout, `bootc status` can fail with
+`opendir(boot): Operation not permitted`. If this occurs, keep OSTree's
+`boot.mount` and mask the conflicting automount:
+
+```sh
+sudo systemctl mask boot.automount
+sudo systemctl start boot.mount
+```
+
+The mask persists in `/etc` across image updates. It leaves the normal boot mount
+and read-only OS protection in place.
+
 Secure Boot and disk encryption are separate. The project assumes Secure Boot is
 unavailable/disabled and chooses unencrypted storage for unattended couch startup.
 [Linux dm-crypt/LUKS](https://www.kernel.org/doc/html/latest/admin-guide/device-mapper/dm-crypt.html)
