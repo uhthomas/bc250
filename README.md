@@ -176,6 +176,11 @@ The GHCR package has separate visibility from this public Git repository. After
 the first push, open [the package settings](https://github.com/users/uhthomas/packages/container/bc250/settings)
 and select **Change visibility → Public** to allow unauthenticated pulls. See
 [GitHub's package visibility instructions](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility#configuring-visibility-of-packages-for-your-personal-account).
+If the package has no connected repository, choose **Connect repository** on its
+package page and select `uhthomas/bc250`. In package settings, enable **Inherit
+access from repository** so the repository's GitHub Actions workflow can publish
+future versions. The initial local push did not establish this connection
+automatically, despite the image's source label.
 
 Establish a working firmware baseline first. The hardware base recommends a
 modified BIOS with **512 MB dynamic VRAM** and **IOMMU disabled**; use the settings
