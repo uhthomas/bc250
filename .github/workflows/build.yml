@@ -60,8 +60,12 @@ jobs:
           if [[ "$ACPI_MODE" == firmware ]]; then
             version="$version-firmware"
           fi
+          if ! command -v skopeo > /dev/null; then
+            sudo apt-get update
+            sudo apt-get install --yes skopeo
+          fi
           printf '%s' "$REGISTRY_TOKEN" | sudo podman login ghcr.io --username "$REGISTRY_USER" --password-stdin
-          if sudo podman manifest inspect "$image:$version" > /dev/null 2> inspect-error.txt; then
+          if sudo skopeo inspect "docker://$image:$version" > /dev/null 2> inspect-error.txt; then
             echo "Version $version already exists; increment IMAGE_VERSION in Containerfile." >&2
             exit 1
           elif ! grep -Eqi 'manifest unknown|manifest_unknown|name unknown|name_unknown' inspect-error.txt; then
