@@ -198,6 +198,27 @@ lsblk -dp -o NAME,SIZE,MODEL,SERIAL
 ssh-keygen -l -f /tmp/bc250-authorized_keys
 ```
 
+Fedora Workstation's live USB has a small writable root overlay. The image needs
+about 5 GB unpacked, and bootc also uses `/var/tmp` to stage image layers. On a
+fresh live session, prepare temporary container and scratch storage **before
+pulling the image**:
+
+```sh
+sudo mkdir -p /var/lib/containers
+sudo mount -t tmpfs -o size=10G,mode=0700 bc250-install-store /var/lib/containers
+sudo mkdir -p /var/lib/containers/tmp
+sudo mount --bind /var/lib/containers/tmp /var/tmp
+df -h /var/lib/containers /var/tmp
+free -h
+swapon --show
+```
+
+This storage uses RAM and swap and disappears at reboot. Prefer the BIOS's
+512 MB dynamic VRAM setting so Linux has most of the board's memory available;
+keep the live image's zram swap enabled. When installing over SSH or from a text
+console, `sudo systemctl stop display-manager` can free memory by stopping the
+live desktop. Do not run that from a terminal inside the graphical desktop.
+
 Identify the destination by model, size and serial. **Installation erases the
 entire selected disk.** Replace `/dev/disk/by-id/REPLACE_WITH_TARGET_DISK` below
 with its actual whole-disk path. The helper refuses mounted disks/partitions and
@@ -209,6 +230,7 @@ BC250_IMAGE=ghcr.io/uhthomas/bc250:0.2.0
 sudo podman run --rm -it --privileged --pid=host --ipc=host \
   --security-opt label=type:unconfined_t \
   --volume /var/lib/containers:/var/lib/containers \
+  --volume /var/tmp:/var/tmp \
   --volume /dev:/dev \
   --volume /tmp/bc250-authorized_keys:/run/bc250-authorized_keys:ro \
   --entrypoint /usr/sbin/bc250-install \
