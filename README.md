@@ -426,16 +426,27 @@ firmware or arrange automatic CPU-unlock reboot loops. BIOS modifications cannot
 be undone by `bootc rollback`. Until firmware is changed, rerun the helper and warm
 reboot after each cold start to use all eight cores.
 
-CPU unlocking can also affect GPU clock telemetry; validate the governor's
-behavior and readings in the chosen firmware/kernel combination. Treat normal
-operation at 6 cores as the fallback if either extra core is unreliable.
+CPU unlocking can also affect GPU clock telemetry. The supplied governor can
+correct the `gpu_metrics` clock field using its SMU reading; after unlocking,
+enable that correction in the machine's configuration:
+
+```sh
+sudo sed -i 's/^fix-freq = false$/fix-freq = true/' /etc/cyan-skillfish-governor-smu/config.toml
+sudo systemctl restart cyan-skillfish-governor-smu
+```
+
+This does not change the configured clock or voltage range. Other interfaces,
+including `pp_dpm_sclk`, can still display incorrect clocks after the CPU unlock.
+Validate governor behavior under load; see the
+[governor's `fix-freq` option](https://github.com/filippor/cyan-skillfish-governor#configuration).
+Treat normal operation at 6 cores as the fallback if either extra core is unreliable.
 
 ## 40 GPU CUs: keep it in the OS
 
 The GPU's additional CUs are enabled through driver/register configuration after
 GPU initialization. This is separate from the CPU unlock. The image includes
-[the UMR-based live manager](https://github.com/WinnieLV/bc250-cu-live-manager)
-through its hardware base, avoiding a locally patched `amdgpu` module tied to
+[the standalone UMR-based live manager](https://github.com/WinnieLV/bc250-cu-live-manager),
+avoiding a locally patched `amdgpu` module tied to
 every kernel build. It can restore the tested configuration on each boot.
 
 Test without a game running. This image already supplies the conservative
