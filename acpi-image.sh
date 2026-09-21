@@ -7,7 +7,7 @@ case "${1:-}" in
         rm /usr/lib/dracut/dracut.conf.d/90-bc250-acpi.conf
         ;;
     initramfs)
-        # Bazzite's /root points here, but /var contents are omitted from OCI.
+        # Fedora bootc's /root points here; /var contents are omitted from OCI.
         install -d -m 0700 /var/roothome
         images=(/usr/lib/modules/*/initramfs.img)
         for initramfs in "${images[@]}"; do

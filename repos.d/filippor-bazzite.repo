@@ -1,0 +1,9 @@
+[copr:copr.fedorainfracloud.org:filippor:bazzite]
+name=BC-250 SMU governor (filippor)
+baseurl=https://download.copr.fedorainfracloud.org/results/filippor/bazzite/fedora-$releasever-$basearch/
+enabled=1
+gpgcheck=1
+gpgkey=https://download.copr.fedorainfracloud.org/results/filippor/bazzite/pubkey.gpg
+repo_gpgcheck=0
+skip_if_unavailable=False
+includepkgs=cyan-skillfish-governor-smu

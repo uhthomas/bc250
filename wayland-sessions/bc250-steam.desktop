@@ -1,0 +1,5 @@
+[Desktop Entry]
+Name=Steam Big Picture
+Comment=Steam in a dedicated Gamescope session
+Exec=/usr/bin/bc250-steam-session
+Type=Application

@@ -43,10 +43,10 @@ jobs:
           sudo podman build --tag localhost/bc250:dev --file Containerfile
           --build-arg "ACPI_MODE=$ACPI_MODE"
           --label "org.opencontainers.image.revision=$GITHUB_SHA" .
-      - name: Test CPU helper without hardware access
+      - name: Test helpers without hardware access
         run: >-
           sudo podman run --rm --network=none --entrypoint /usr/bin/python3
-          --volume "$PWD/tests:/tests:ro" localhost/bc250:dev /tests/test_cpu_unlock.py
+          --volume "$PWD/tests:/tests:ro" localhost/bc250:dev -m unittest discover -s /tests -v
       - name: Publish
         if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
         env:

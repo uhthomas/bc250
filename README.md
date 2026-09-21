@@ -1,11 +1,12 @@
 # BC-250 living-room PC
 
 A bootc image for an AMD BC-250 used as a Steam machine, Jellyfin client and
-ad-free YouTube player. The starting point is the community-maintained
-[Bazzite BC-250 Deck image](https://github.com/62fixolab/Latest-Bazzite-AMD-BC-250-Patched-Images),
-with its base digest pinned in `Containerfile`. This inherits Bazzite's KDE desktop,
-Steam Game Mode, graphics stack, and BC-250 SMU governor. The `40cu` base includes
-unlock **tools**, not an unconditional unlock.
+ad-free YouTube player. Version **0.2.0** starts directly from the official
+`quay.io/fedora/fedora-bootc:44` image, pinned by digest in `Containerfile`.
+It explicitly installs Fedora's kernel, Mesa, KDE Plasma, SDDM, Gamescope and
+controller support, Steam from RPM Fusion, and the BC-250 SMU governor from
+filippor's COPR. That COPR is restricted to the governor package. CPU/CU unlocks
+remain opt-in. The earlier `0.1.0` images used Bazzite; use `0.2.0` for new installs.
 
 This is an initial image, not yet validated on a physical BC-250. Assume the
 Jellyfin server runs elsewhere. Hardware-dependent checks are listed below.
@@ -49,7 +50,7 @@ user choices. On an existing installation whose `/etc` settings have been change
 select balanced again with `powerprofilesctl set balanced` after rebasing.
 
 The GPU's separate SMU governor scales between **500 and 1500 MHz**, using the
-supplied 700–900 mV operating points. This lowers the base image's 1000 MHz floor.
+supplied 700–900 mV operating points, allowing lower clocks during light loads.
 The 1500 MHz ceiling is a conservative starting point for both 24 and 40 CUs;
 frequency, voltage, temperatures and stability still need board testing. TuneD's
 balanced profile leaves GPU control to that governor.
@@ -77,7 +78,7 @@ remote/DisplayPort path.
 
 | Use | Starting choice | Trade-off |
 | --- | --- | --- |
-| Games | Bazzite Steam Game Mode / Gamescope / Proton | Existing console-style session and controller support |
+| Games | Steam Big Picture / Gamescope / Proton | Dedicated session in SDDM; Fedora controller rules |
 | Jellyfin on the TV | Kodi + Jellyfin for Kodi | Remote-friendly interface, libraries on Kodi's home screen |
 | Multiple Jellyfin users/servers | Kodi + JellyCon instead | Browse the server without synchronizing Kodi's library |
 | YouTube with a D-pad | Kodi's YouTube add-on + SponsorBlock service | Configure its API/login requirements and validate playback with the U2 |
@@ -130,47 +131,43 @@ On an x86-64 Linux builder with Podman:
 sudo podman build --tag localhost/bc250:dev --file Containerfile .
 ```
 
-Use Podman: Docker's overlay2 storage hit its layer-depth limit loading this base
-during development. Allow substantial disk space for the full gaming image.
+Allow substantial disk space for the desktop/gaming packages and image layers.
 
 The build runs `bootc container lint --fatal-warnings`. GitHub Actions builds pull requests and
 `main`; CI publishing is an explicit workflow dispatch with `publish` enabled. It
-publishes the `ARG IMAGE_VERSION` declared in `Containerfile`, initially
-`ghcr.io/uhthomas/bc250:0.1.0`, and refuses to overwrite an existing version.
-Select `acpi_mode=firmware` to build and publish `0.1.0-firmware` instead. Both
+publishes the `ARG IMAGE_VERSION` declared in `Containerfile`, currently
+`ghcr.io/uhthomas/bc250:0.2.0`, and refuses to overwrite an existing version.
+Select `acpi_mode=firmware` to build and publish `0.2.0-firmware` instead. Both
 variants come from the same source; choose exactly one ACPI provider on the board.
 Increment the version for each release. No image is published by a local build.
-Locally built releases must pass the same lint and CPU-helper checks before push,
+Locally built releases must pass the same lint and helper checks before push,
 carry the source commit's `org.opencontainers.image.revision` label, and use a new
 version tag. Record the registry digest returned by the push.
 
-The root-helper tests run with mocked PCI, SMU and service commands, inside the
-container without passing through hardware:
+The CPU-helper tests mock PCI, SMU and service commands; installer tests exercise
+rejection paths with bootc mocked. Run both inside the container without passing
+through hardware:
 
 ```sh
 sudo podman run --rm --network=none --entrypoint /usr/bin/python3 \
-  --volume "$PWD/tests:/tests:ro" localhost/bc250:dev /tests/test_cpu_unlock.py
+  --volume "$PWD/tests:/tests:ro" localhost/bc250:dev -m unittest discover -s /tests -v
 ```
 
-The base pin fixes the OS/kernel/governor input. Diagnostic RPMs resolve from
-repositories at build time, so the complete build is not bit-for-bit reproducible.
+The base pin fixes the Fedora bootc input. Additional RPMs resolve from Fedora,
+RPM Fusion and the governor's COPR at build time, so the complete build is not
+bit-for-bit reproducible. ACPI/CPU sources and the CU manager are pinned separately.
 Update the base digest deliberately and repeat the hardware checks. Flatpaks,
 Kodi add-ons, accounts, and saved CU settings live in persistent machine/user
 state; an OS rollback does not roll those back.
 
 ## Install and update
 
-The initial installation path is a Bazzite Deck installation on the BC-250 followed
-by a switch to the published custom image. Use the Bazzite installer to create your
-own user and select an **unencrypted** disk layout. This repository does not contain
-a disk-erasing installer or a default account/password. A custom USB installer is
-not yet supplied.
-
-For a blank disk, follow the [Bazzite installation guide](https://docs.bazzite.gg/General/Installation_Guide/)
-and select the KDE image with Steam Game Mode for AMD graphics (`bazzite-deck`).
-Have Ethernet, a USB keyboard and the TV/monitor connected for first boot. Confirm
-the destination disk in the installer; existing data on it will be erased. If
-Bazzite Deck already boots on the board, start from that installation.
+Install this image directly from a **Fedora live USB booted in UEFI mode** using
+rootful Podman and the image's `bc250-install` helper. Have Ethernet, a USB keyboard
+and the TV/monitor connected. There is no preliminary Bazzite installation and no
+default account/password. The install creates an unencrypted ext4 system and
+injects your public SSH key for initial root access; secrets are not baked into
+the image. A custom graphical installer ISO is not supplied.
 
 The GHCR package has separate visibility from this public Git repository. After
 the first push, open [the package settings](https://github.com/users/uhthomas/packages/container/bc250/settings)
@@ -182,30 +179,64 @@ access from repository** so the repository's GitHub Actions workflow can publish
 future versions. The initial local push did not establish this connection
 automatically, despite the image's source label.
 
-Establish a working firmware baseline first. The hardware base recommends a
+Establish a working firmware baseline first. The community baseline uses a
 modified BIOS with **512 MB dynamic VRAM** and **IOMMU disabled**; use the settings
 appropriate to your firmware and verify the exposed system/GPU memory. See
-[the base image's prerequisites](https://github.com/62fixolab/Latest-Bazzite-AMD-BC-250-Patched-Images#install).
+[the BC-250 community prerequisites](https://github.com/62fixolab/Latest-Bazzite-AMD-BC-250-Patched-Images#install).
 
-Once this repository's image has been published and made readable to the machine,
-from an installation without local RPM layering:
-
-```sh
-sudo bootc switch ghcr.io/uhthomas/bc250:0.1.0
-sudo systemctl reboot
-```
-
-Use `ghcr.io/uhthomas/bc250:0.1.0-firmware` instead when the BIOS supplies the ACPI
-fixes. Verify the BIOS setting before rebooting; an unknown BIOS configuration is
+Select `0.2.0` when this image supplies ACPI fixes, or `0.2.0-firmware` when the
+BIOS supplies them. Verify the BIOS setting first; an unknown configuration is
 not evidence that ACPI injection is absent. For an exact tested deployment, replace
 the tag with the published digest: `ghcr.io/uhthomas/bc250@sha256:<digest>`.
 
-For remote iteration, on the board enable SSH with
-`sudo systemctl enable --now sshd`, then use
-`ssh-copy-id <user>@<board-address>` from your workstation. Keep
-this on the local network; no router port forwarding is needed. Verify an SSH
-login and `sudo` access before testing display or GPU changes. Account credentials
-and SSH keys belong on the installed machine, not in the public image.
+On the live USB, place your **public** SSH key(s), one per line, in
+`/tmp/bc250-authorized_keys`. Install Podman if the live image does not include it:
+
+```sh
+sudo dnf install podman
+lsblk -dp -o NAME,SIZE,MODEL,SERIAL
+ssh-keygen -l -f /tmp/bc250-authorized_keys
+```
+
+Identify the destination by model, size and serial. **Installation erases the
+entire selected disk.** Replace `/dev/disk/by-id/REPLACE_WITH_TARGET_DISK` below
+with its actual whole-disk path. The helper refuses mounted disks/partitions and
+asks you to type the resolved disk path before running bootc. Leave enough space
+in the live environment's container storage to download and unpack the image.
+
+```sh
+BC250_IMAGE=ghcr.io/uhthomas/bc250:0.2.0
+sudo podman run --rm -it --privileged --pid=host --ipc=host \
+  --security-opt label=type:unconfined_t \
+  --volume /var/lib/containers:/var/lib/containers \
+  --volume /dev:/dev \
+  --volume /tmp/bc250-authorized_keys:/run/bc250-authorized_keys:ro \
+  --entrypoint /usr/sbin/bc250-install \
+  "$BC250_IMAGE" /dev/disk/by-id/REPLACE_WITH_TARGET_DISK bc250 /run/bc250-authorized_keys
+```
+
+The bind mounts and privileges follow [bootc's installation instructions](https://bootc.dev/bootc/bootc-install.html).
+After installation, shut down, remove the USB, and boot the installed disk. Find
+its DHCP address, then connect from your workstation using the matching SSH key:
+
+```sh
+ssh root@<board-address>
+```
+
+Create your desktop administrator on the installed system. Replace `thomas` below
+if you want another name; `passwd` prompts interactively:
+
+```sh
+useradd --create-home --groups wheel --shell /bin/bash thomas
+passwd thomas
+install -d -m 0700 -o thomas -g thomas /home/thomas/.ssh
+install -m 0600 -o thomas -g thomas /root/.ssh/authorized_keys /home/thomas/.ssh/authorized_keys
+restorecon -RF /home/thomas
+```
+
+SSH is enabled in the image. Verify login as your new user and `sudo` access before
+testing display or GPU changes. Keep this on the local network; no router port
+forwarding is needed. Log into **Plasma** on the TV for initial setup.
 
 After the first boot, run `bc250-media-setup` as your desktop user. Establish a
 working baseline for video/audio, ad-free YouTube, Steam, CPU frequency scaling
@@ -213,7 +244,15 @@ and wall power before applying CPU/CU unlocks. Test each unlock separately, then
 together, using the acceptance checks below. Firmware experiments remain separate
 from OS image updates and cannot be undone by `bootc rollback`.
 
-Check `bootc status` after reboot. For a new release, use `sudo bootc switch` with
+Check `bootc status` after reboot. For updates from an existing bootc installation
+without local RPM layering:
+
+```sh
+sudo bootc switch ghcr.io/uhthomas/bc250:0.2.0
+sudo systemctl reboot
+```
+
+Use the firmware variant when appropriate. For a new release, use `sudo bootc switch` with
 the new version (or its digest) and reboot. Published version tags are immutable,
 so `bootc upgrade` on an existing version will not jump to another release.
 `sudo bootc rollback` stages the previous deployment.
@@ -229,7 +268,7 @@ requirements change. No MOK enrollment is needed for this setup.
 
 ## TV setup
 
-In KDE Desktop Mode, run as your normal user:
+In KDE Plasma, run as your normal user:
 
 ```sh
 bc250-media-setup
@@ -254,7 +293,8 @@ the build container. Rerunning setup preserves an existing remote keymap.
 4. In desktop Steam, add **Kodi** as a non-Steam game. If it is not listed, use
    `/usr/bin/flatpak` as the executable and `run tv.kodi.Kodi` as launch options.
    Do not enable a Proton compatibility tool for this native Linux application.
-5. Return to Game Mode. Kodi is the media entry; exiting it returns to Steam.
+5. Log out of Plasma and select **Steam Big Picture** in SDDM's session selector.
+   Kodi is a media entry in Steam; exiting Kodi returns to Steam.
    Establish controller and U2 keyboard navigation on the actual device before
    relying on this as the only living-room interface.
 
@@ -264,9 +304,22 @@ in Settings to skip embedded sponsor segments. To add it to Steam, use
 interface may need a mouse/trackpad or a Steam Input pointer mapping; the U2's
 D-pad alone is not yet a validated replacement for SmartTube navigation.
 
-The image retains Bazzite's normal Game Mode setup instead of hard-coding a user
-or replacing its login manager. Adding the Steam shortcut and account sign-in are
-one-time setup steps. A dedicated Kodi-first boot/session switcher is not included.
+The Steam session runs Fedora's Gamescope and native Steam. Exiting Steam returns
+to SDDM; select Plasma there for desktop setup. SteamOS-specific system settings
+and Bazzite's session-switching helpers are not part of this image.
+
+For unattended couch startup, after testing the session, create
+`/etc/sddm.conf.d/80-bc250-autologin.conf` with your actual username:
+
+```ini
+[Autologin]
+User=thomas
+Session=bc250-steam.desktop
+Relogin=false
+```
+
+This is machine-local configuration. Remove the file to return to the normal
+login screen. No username or password is built into the public image.
 
 ## SofaBaton U2
 
@@ -354,15 +407,15 @@ Test without a game running. This image already supplies the conservative
 The profile is a starting point, not a guarantee for every board:
 
 ```sh
-ujust bc250-cu-status
-ujust bc250-cu-dry-run-40
-ujust bc250-cu-enable-40
+sudo bc250-cu-live-manager status
+sudo bc250-cu-live-manager --dry-run enable all
+sudo bc250-cu-live-manager enable all
 ```
 
 Test real games and correctness/stability at temperature. Live dispatch changes
 may leave Vulkan/driver topology reporting 24 CUs; inspect the manager's routed
 CU state and actual workload behavior. Neither a displayed number nor a benchmark
-speedup proves stability. See the base project's
+speedup proves stability. See the community's
 [40-CU testing guide](https://github.com/62fixolab/Latest-Bazzite-AMD-BC-250-Patched-Images/blob/main/docs/40cu.md).
 Use 24 CUs or a smaller validated layout if necessary.
 
@@ -374,19 +427,19 @@ sudo systemctl enable bc250-cu-restore.service
 ```
 
 The image's service uses the executable in `/usr` so tool updates follow OS
-updates. Use this service instead of upstream `install-service` / `ujust
-bc250-cu-save-boot`, which copy a script into persistent `/usr/local`. The saved
+updates. Use this service instead of upstream `install-service`, which copies a
+script into persistent `/usr/local`. The saved
 table remains local at `/etc/bc250-cu-live-manager.conf`.
 
 To return to stock GPU dispatch:
 
 ```sh
 sudo systemctl disable bc250-cu-restore.service
-ujust bc250-cu-restore-24
+sudo bc250-cu-live-manager stock-dispatch
 ```
 
-If you already enabled the upstream service, also run `ujust
-bc250-cu-disable-boot`. Disabling either service alone does not revert live GPU
+If you already enabled the upstream service, also run
+`sudo bc250-cu-live-manager uninstall-service`. Disabling either service alone does not revert live GPU
 registers. For recovery from a failed saved configuration, append
 `bc250.no-unlock` to the kernel command line in the boot menu for one boot, disable
 the service, and retest. That flag only bypasses this repository's CU service;

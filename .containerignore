@@ -3,6 +3,16 @@
 !media-setup.sh
 !cpu-unlock.sh
 !acpi-image.sh
+!install.sh
+!steam-session.sh
+!repos.d/
+!repos.d/**
+!wayland-sessions/
+!wayland-sessions/**
+!bootc/
+!bootc/**
+!tmpfiles.d/
+!tmpfiles.d/**
 !kodi/
 !kodi/**
 !vendor/

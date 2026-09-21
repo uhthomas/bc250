@@ -32,5 +32,5 @@ settings to also skip sponsor segments inside videos.
 In Kodi's File manager, add https://kodi.jellyfin.org as a source, then install
 repository.jellyfin.kodi.zip and the Jellyfin for Kodi or JellyCon add-on.
 For YouTube with the remote, see the repository README for Kodi's YouTube and
-SponsorBlock add-ons, remote pairing, and Game Mode setup.
+SponsorBlock add-ons, remote pairing, and the Steam Big Picture session.
 EOF
