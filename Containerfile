@@ -1,4 +1,4 @@
-ARG IMAGE_VERSION=0.2.0
+ARG IMAGE_VERSION=0.2.1
 
 FROM registry.fedoraproject.org/fedora:44 AS acpi-build
 
@@ -35,6 +35,7 @@ RUN dnf5 --assumeyes --setopt=install_weak_deps=False install \
         alsa-utils \
         bluedevil \
         bluez \
+        btop \
         cyan-skillfish-governor-smu \
         dolphin \
         evtest \
@@ -45,6 +46,7 @@ RUN dnf5 --assumeyes --setopt=install_weak_deps=False install \
         kernel-tools \
         konsole \
         libva-utils \
+        lm_sensors \
         mesa-dri-drivers \
         mesa-vulkan-drivers \
         openssh-server \

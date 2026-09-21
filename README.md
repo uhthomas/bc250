@@ -1,12 +1,12 @@
 # BC-250 living-room PC
 
 A bootc image for an AMD BC-250 used as a Steam machine, Jellyfin client and
-ad-free YouTube player. Version **0.2.0** starts directly from the official
+ad-free YouTube player. Since **0.2.0**, the image starts directly from the official
 `quay.io/fedora/fedora-bootc:44` image, pinned by digest in `Containerfile`.
 It explicitly installs Fedora's kernel, Mesa, KDE Plasma, SDDM, Gamescope and
 controller support, Steam from RPM Fusion, and the BC-250 SMU governor from
 filippor's COPR. That COPR is restricted to the governor package. CPU/CU unlocks
-remain opt-in. The earlier `0.1.0` images used Bazzite; use `0.2.0` for new installs.
+remain opt-in. The earlier `0.1.0` images used Bazzite; use `0.2.1` for new installs.
 
 This is an initial image, not yet validated on a physical BC-250. Assume the
 Jellyfin server runs elsewhere. Hardware-dependent checks are listed below.
@@ -136,8 +136,8 @@ Allow substantial disk space for the desktop/gaming packages and image layers.
 The build runs `bootc container lint --fatal-warnings`. GitHub Actions builds pull requests and
 `main`; CI publishing is an explicit workflow dispatch with `publish` enabled. It
 publishes the `ARG IMAGE_VERSION` declared in `Containerfile`, currently
-`ghcr.io/uhthomas/bc250:0.2.0`, and refuses to overwrite an existing version.
-Select `acpi_mode=firmware` to build and publish `0.2.0-firmware` instead. Both
+`ghcr.io/uhthomas/bc250:0.2.1`, and refuses to overwrite an existing version.
+Select `acpi_mode=firmware` to build and publish `0.2.1-firmware` instead. Both
 variants come from the same source; choose exactly one ACPI provider on the board.
 Increment the version for each release. No image is published by a local build.
 Locally built releases must pass the same lint and helper checks before push,
@@ -184,7 +184,7 @@ modified BIOS with **512 MB dynamic VRAM** and **IOMMU disabled**; use the setti
 appropriate to your firmware and verify the exposed system/GPU memory. See
 [the BC-250 community prerequisites](https://github.com/62fixolab/Latest-Bazzite-AMD-BC-250-Patched-Images#install).
 
-Select `0.2.0` when this image supplies ACPI fixes, or `0.2.0-firmware` when the
+Select `0.2.1` when this image supplies ACPI fixes, or `0.2.1-firmware` when the
 BIOS supplies them. Verify the BIOS setting first; an unknown configuration is
 not evidence that ACPI injection is absent. For an exact tested deployment, replace
 the tag with the published digest: `ghcr.io/uhthomas/bc250@sha256:<digest>`.
@@ -226,7 +226,7 @@ asks you to type the resolved disk path before running bootc. Leave enough space
 in the live environment's container storage to download and unpack the image.
 
 ```sh
-BC250_IMAGE=ghcr.io/uhthomas/bc250:0.2.0
+BC250_IMAGE=ghcr.io/uhthomas/bc250:0.2.1
 sudo podman run --rm -it --privileged --pid=host --ipc=host \
   --security-opt label=type:unconfined_t \
   --volume /var/lib/containers:/var/lib/containers \
@@ -270,7 +270,7 @@ Check `bootc status` after reboot. For updates from an existing bootc installati
 without local RPM layering:
 
 ```sh
-sudo bootc switch ghcr.io/uhthomas/bc250:0.2.0
+sudo bootc switch ghcr.io/uhthomas/bc250:0.2.1
 sudo systemctl reboot
 ```
 
@@ -479,6 +479,9 @@ it does not reverse a BIOS CPU unlock or an independently installed unlock servi
   known segments, and search/subscriptions/playback using the intended remote.
 * U2 navigation in Kodi and Steam, volume/power routing, and Bluetooth reconnect.
 * OS upgrade/rollback and recovery with a saved CU configuration present.
+
+The image includes `sensors` (from `lm_sensors`) for temperature readings and
+`btop` for interactive resource monitoring.
 
 Useful diagnostics: `bootc status`, `lscpu`, `lspci -nnk`, `vainfo`,
 `systemctl status cyan-skillfish-governor-smu`, and `sudo journalctl -k -b`.
