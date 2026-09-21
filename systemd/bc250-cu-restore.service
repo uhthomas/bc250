@@ -1,0 +1,16 @@
+[Unit]
+Description=Restore the BC-250 CU configuration tested on this board
+Wants=systemd-udev-settle.service
+After=systemd-udev-settle.service cyan-skillfish-governor-smu.service
+Before=display-manager.service
+ConditionPathExists=/etc/bc250-cu-live-manager.conf
+ConditionKernelCommandLine=!bc250.no-unlock
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bc250-cu-live-manager --yes apply-service
+RemainAfterExit=yes
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

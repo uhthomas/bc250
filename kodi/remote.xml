@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<keymap>
+  <global>
+    <keyboard>
+      <!-- Optional FLIRC/U2 buttons; normal arrows/Enter keep Kodi defaults. -->
+      <f1>ActivateWindow(Home)</f1>
+      <f2>ActivateWindow(Videos,plugin://plugin.video.jellyfin/,return)</f2>
+      <f3>ActivateWindow(Videos,plugin://plugin.video.youtube/,return)</f3>
+      <f4>Quit</f4>
+    </keyboard>
+  </global>
+</keymap>

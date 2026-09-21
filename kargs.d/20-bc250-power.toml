@@ -1,0 +1,2 @@
+kargs = ["cpufreq.default_governor=schedutil"]
+match-architectures = ["x86_64"]

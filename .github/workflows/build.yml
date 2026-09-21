@@ -1,0 +1,72 @@
+name: Build image
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the tested image to GHCR
+        type: boolean
+        default: false
+      acpi_mode:
+        description: Provider of CPU ACPI power-management tables
+        type: choice
+        default: initramfs
+        options: [initramfs, firmware]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      ACPI_MODE: ${{ inputs.acpi_mode || 'initramfs' }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shell scripts
+        run: shellcheck ./*.sh
+      - name: Make room for the gaming image
+        run: sudo rm -rf /opt/hostedtoolcache /usr/local/lib/android /usr/share/dotnet
+      - name: Build and lint bootc image
+        run: >-
+          sudo podman build --tag localhost/bc250:dev --file Containerfile
+          --build-arg "ACPI_MODE=$ACPI_MODE"
+          --label "org.opencontainers.image.revision=$GITHUB_SHA" .
+      - name: Test CPU helper without hardware access
+        run: >-
+          sudo podman run --rm --network=none --entrypoint /usr/bin/python3
+          --volume "$PWD/tests:/tests:ro" localhost/bc250:dev /tests/test_cpu_unlock.py
+      - name: Publish
+        if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          image="ghcr.io/${REPOSITORY,,}"
+          version=$(awk -F= '/^ARG IMAGE_VERSION=/ { print $2 }' Containerfile)
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          if [[ "$ACPI_MODE" == firmware ]]; then
+            version="$version-firmware"
+          fi
+          printf '%s' "$REGISTRY_TOKEN" | sudo podman login ghcr.io --username "$REGISTRY_USER" --password-stdin
+          if sudo podman manifest inspect "$image:$version" > /dev/null 2> inspect-error.txt; then
+            echo "Version $version already exists; increment IMAGE_VERSION in Containerfile." >&2
+            exit 1
+          elif ! grep -Eqi 'manifest unknown|manifest_unknown|name unknown|name_unknown' inspect-error.txt; then
+            cat inspect-error.txt >&2
+            exit 1
+          fi
+          sudo podman push --digestfile image-digest.txt localhost/bc250:dev "docker://$image:$version"
+          printf 'Published %s:%s@%s\n' "$image" "$version" "$(cat image-digest.txt)"
