@@ -59,6 +59,44 @@ bc250_tmr_wrapper:
     ldr r4, =0xe35cc0
     mov.w r1, #0x200000
     str r1, [r4, #4]
+#ifdef BC250_INIT_VIDEO_RSMU12
+    /* The signed BC250 RSMU startup skips client 12. Run its own bounded
+     * four-store helper only after type-13 video TMR allocation succeeds.
+     * The host must enable VCN clocks before SETUP_TMR for this experiment.
+     */
+    movs r0, #12
+    bl bc250_original_rsmu_client_init
+    movs r0, #0
+#endif
+#ifdef BC250_INIT_VIDEO_GASKET12
+    /* Reproduce the pinned reference policy's client-12 writes only after
+     * both allocations and native RSMU initialization succeeded. A rejected
+     * service result is returned through the original SETUP_TMR error path.
+     */
+    bl bc250_gasket12_init
+#endif
 1:
     pop {r4, pc}
+#endif
+
+#ifdef BC250_INIT_VIDEO_GASKET12
+.section .gasket_cave, "ax", %progbits
+.global bc250_gasket12_init
+.type bc250_gasket12_init, %function
+bc250_gasket12_init:
+    push {r4-r6, lr}
+    ldr r4, =bc250_gasket12_table
+    movs r5, #51
+1:
+    ldr r0, [r4], #4
+    ldr r1, [r4], #4
+    movs r2, #4
+    svc #0x7c
+    cbnz r0, 2f
+    subs r5, r5, #1
+    bne 1b
+    movs r0, #0
+2:
+    pop {r4-r6, pc}
+#include "gasket12-reference.inc"
 #endif

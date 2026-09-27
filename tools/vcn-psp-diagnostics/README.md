@@ -51,3 +51,32 @@ with TMR address `0xf41f800000`. Both probes deliberately abort subsequent
 graphics initialization, so neither demonstrates VCN execution or decoding.
 `prepare_vcn_psp_driver.py` and `run_vcn_psp_driver.py` prepare a guarded,
 default-off follow-up that registers VCN 2.0.3 but retains PSP loading.
+
+The separate video-TMR profile moved the accepted firmware address to
+`0xf41fa00000` and let graphics KIQ pass. The opt-in VCN ring then timed out
+because VCN power/status registers read as all ones. The bound-GPU
+`run_late_vcn_psp_probe.py` control confirmed status `0` at the same address
+while VCN version/status/power stayed `0xffffffff` before and after loading.
+The clock pulse must precede module insertion and `SETUP_TMR` on this profile.
+
+`run_post_auth_native_cycle.py` repeats the host-tested, bounded SMU client-12
+down/up sequence only after verifying that successful late PSP load in the
+current diagnostic boot. Its default mode is read-only preflight; `--run`
+requires a staged diagnostic recovery boot and active recovery timer. The live
+sequence returned full PSP success for commands 7 and 6, restored its primary
+control baseline, but did not expose VCN registers. Raw evidence is under
+ignored `output/pico2/type51-live-20260927/post-auth-native-cycle/`. It makes
+no BIOS EEPROM or Pico flash writes.
+
+`run_post_auth_smn_read.py` verifies a fresh late load in the same boot, holds
+the known VCN clocks/power state, and reads only the full-address
+`0x0900c004` reset-page word after two known domain-6 controls. It requires
+the inspected one-time diagnostic entry and a recovery timer because the
+same target hung when read with clocks off in an older trial. With clocks on
+after a successful firmware load, the target returned `0xffffffff`; the
+domain controls returned their expected values, and clock restoration passed.
+The board stayed in diagnostic mode. Raw evidence is under ignored
+`output/pico2/type51-live-20260927/post-auth-smn-read/`.
+`cleanup_unconsumed_diagnostic_boot.sh` removes an unused staged recovery entry
+after checking its exact hash and GRUB flag; the older cleanup script applies
+only after that one-time entry has actually been consumed by a reboot.

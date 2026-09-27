@@ -9,6 +9,113 @@ temporary blanket pause; it does not justify a speculative write. Do not reflash
 unchanged candidates or reset firmware just for convenience.
 Times below are UTC. Detailed evidence is under output/video-decode-20260922/.
 
+Latest post-power firmware retry (2026-09-27)
+---------------------------------------------
+A pinned diagnostic amdgpu module turned on the UVDW tile (PGFSM_STATUS=0),
+then sent one more volatile LOAD_IP_FW for the same VCN image before VCPU MC
+setup. PSP returned ret=0, status=0 and the same TMR address f41fa00000.
+Firmware-cache BAR low and UVD_SOFT_RESET read ffffffff before and after;
+subsequent cache BAR/size/offset readbacks were all ones. VCPU status stayed
+4 over ten waits; GPU probe failed. The Pico verified 4456/4456 changes in
+eight boot passes, zero faults/mismatches. Offline execution of the PSP
+post-load routine with loaded flag 0 and 1 issued both reset SVC7c calls
+in either case for context ffff; whole second live call flow and physical
+write effects remain unproven. BC250 boot fa1071e9-44ca-40b6-b398-16b0d82ba36a
+is diagnostic, GPU unbound, recovery armed, /boot read-only. Journal:
+output/video-decode-20260922/kernel-build/vcn-postpower-reload-20260927/
+late-vcn-postpower-reload-v01-20260927.jsonl. No EEPROM or Pico flash write,
+no desktop restore, no decoded frame.
+
+Latest PSP runtime-table audit (2026-09-27)
+-------------------------------------------
+The suspected 0x5244 table at PSP base+0x6000 is a runtime driver-slot
+array, not a 31-entry VCN gate table stored in the BIOS. The pinned TOS
+decompilation clears 0xa80 bytes there (32 x 0x54), recognizes 0x5244 in
+the driver header, copies descriptors into slots, and later walks the slots
+with PSP SVC f2. The 16 MiB board ROM contains a single literal 0x5244 at
+0x985014 (DRIVER_ENTRIES header); 0x286000 is erased ff. The absent flash
+table is therefore expected. This does not tell us which runtime driver
+operations ran on the live board. It avoids a speculative BIOS patch and
+focuses the next analysis on actual driver startup and isolation operations.
+No flash write or board reset for this audit.
+
+Latest VCPU PC/fault trace (2026-09-27)
+-------------------------------------
+On fresh diagnostic boots, a read-only VCPU trace module sampled PC, local
+page-fault status and LMI latency at reset release and one second later. Both
+samples were pc=0, pf=0, latency=0000ff00. A variant set the documented
+TRCE_EN bit before reset release, but VCPU_CNTL readback stayed 0ff20200 with
+the bit clear, and PC/status did not change. This is not proof the VCPU never
+executed: trace enable may be blocked or self-clearing. Firmware load was
+accepted, VCN status remained 4, and the GPU probe failed again. The Pico
+verified 3342/3342 substitutions over six boot passes with zero routing
+faults or mismatches. BC250 boot b6240602-f5c0-4037-8af0-32a60abba5d0
+remains diagnostic, GPU unbound, recovery bc250_vcn_once=1 armed, /boot ro.
+No EEPROM or Pico flash writes and no desktop restore. Journals:
+output/video-decode-20260922/kernel-build/vcn-vcpu-trace-20260927/
+late-vcn-vcpu-trace-v01-20260927.jsonl and
+output/video-decode-20260922/kernel-build/vcn-vcpu-trace-enabled-20260927/
+late-vcn-vcpu-trace-enabled-v01-20260927.jsonl.
+
+Latest UVDW tile power result (2026-09-27)
+------------------------------------------
+The VCN 2.0 register definitions decode the earlier PGFSM status 0x00200000
+as UVDW power status 2 (off), with the lower ten tiles on. A diagnostic
+kernel module added UVDW_PWR_CONFIG=1 to the existing startup path. On live
+BC250 boot ff8378e2-0eee-4773-b60c-165d5a5ec1cb, it read back config
+0x00155555 and status 0x00000000: UVDW powered on. PSP VCN firmware still
+loaded at 0xf41fa00000, yet VCPU status stayed 0x4 over ten waits and GPU
+probe failed. This excludes UVDW remaining off as a sufficient explanation
+for the VCPU failure. The Pico SRAM profile verified 1114/1114 substitutions
+over two passes, fault=0 and mismatches=0. The first Pico RAM reload failed
+to enumerate on the original Pi USB port; after the user replugged it to a
+different port, the exact same UF2 loaded, armed and ran normally. The board
+remains in diagnostic mode, GPU unbound, recovery bc250_vcn_once=1 armed,
+/boot read-only. The two flash devices were not written; no desktop restore.
+Journal: output/video-decode-20260922/kernel-build/vcn-uvdw-power-20260927/
+late-vcn-uvdw-power-v01-20260927.jsonl. No decoded frame yet.
+
+Latest PSP cache-register result (2026-09-27)
+---------------------------------------------
+With VCN registration off and the GPU bound, an intact VCN firmware load was
+followed by PSP SVC 7b read of word address 0x2107c, the VCN cache BAR low
+register. The diagnostic status was 0x7eadbeef, reporting low 28 read bits
+0xeadbeef. On a fresh diagnostic boot, a second RAM-only profile issued PSP
+SVC 7c write 0x1fa00000 to the same address; that service returned zero, but
+SVC 7b readback still produced 0x7eadbeef. The write/read profile passed ten
+local real-instruction cases and the Pico verified 1210/1210 substitutions
+over two live passes with fault=0. A control profile used the same PSP read
+service at UVD_POWER_STATUS word address 0x1f810. It returned 0x801 low28,
+matching the host's 0x801 read; the Pico verified 1198/1198 substitutions
+with fault=0. This makes the deadbeef cache-read pattern specific to that
+register path, but still does not prove whether the physical cache register
+accepted the write. The board is still in diagnostic mode on boot
+004ff632-efda-4340-baa3-1e3f8718099d, GPU bound VCN-off, recovery entry
+bc250_vcn_once=1 armed. No BIOS EEPROM or Pico flash writes; no desktop restore.
+No decoded frame yet. See docs/video-decode-next-step.md.
+
+Current hardware-decode status (2026-09-27)
+-----------------------------------------
+The board remains on the isolated diagnostic boot. User requested continued
+iteration without restoring the normal desktop between trials. After a
+read-only amdgpu debugfs register probe wedged the machine, authorized APC
+outlet 8 rebooted it to the same diagnostic entry. The consumed one-time GRUB
+entry was cleared before the next trial. No BIOS EEPROM or Pico flash was
+written.
+
+The live GPU IP-discovery blob reports VCN 2.0.3, revision 3, harvest 0; its
+harvest table is empty and it has no VCN_INFO codec-fuse table. The installed
+Navi10/12/14/Renoir VCN 2.x files share the same payload. A new locally built
+LMI trace module (SHA256 ef60a306be0238bf14fef88b258dc5ddc5c4fab3e687893e5027da7711b87998)
+ran with the RAM-only Pico gasket profile and the 1250 MHz VCN preset. The
+VCN status was 4 through ten waits and the ring timed out -110. At reset
+release and one second later, LMI_STATUS=007c337f, LMI_CTRL=00307340,
+LMI_CTRL2=003e0010, VCPU_CNTL=0ff20200. VCPU clock enable was set, UMC
+arbitration stall cleared, and no MMHUB fault was logged. The GPU did not
+bind; temporary SMU clock controls returned to baseline. Diagnostic recovery
+entry bc250_vcn_once=1 is armed on boot 18459527-4418-40ca-b94a-296b4992360a.
+No hardware-decoded frame yet. See docs/video-decode-next-step.md.
+
 Current status (2026-09-26 21:03 UTC)
 ----------------------------------
 User confirmed BC250 off and all five Pico GPIO wires removed; Pi showed one
@@ -6779,3 +6886,130 @@ module used direct loading and would not exercise the PSP path that just
 succeeded. A fresh one-time diagnostic boot is staged for the VCN driver
 trial. No accessible VCN registers, running ring or hardware-decoded frame
 has yet been demonstrated.
+
+2026-09-27 14:20 UTC: post-auth VCN register and bounded SMU reset trial
+-----------------------------------------------------------------------
+The opt-in VCN driver first failed graphics KIQ under metadata-only firmware;
+the VCN-disabled control bound. With a RAM-only 1-MiB video TMR allocation at
+offset 2 MiB, intact type-13 firmware load succeeded at 0xf41fa00000 and
+graphics KIQ passed. VCN hardware initialization still read PGFSM_STATUS as
+all ones and the decode ring timed out -110. The Pico substitution profile
+reported zero routing faults or mismatches; neither flash device was written.
+
+Built a default-off bound-GPU late PSP probe. After an SMU clock/power pulse
+before module insertion, it bound the VCN-disabled GPU and submitted the intact
+firmware: ret=0, PSP status=0, fw_addr=0xf41fa00000. The PSP control register
+read 0xf4, while VCN version/status/power each read 0xffffffff before and after
+the load. Restored the temporary clock controls. Earlier late-probe attempts
+that inserted the module before the pulse timed out during SETUP_TMR; this
+ordering is required by the current experimental profile.
+
+On that same authenticated boot, read-only native-cycle preflight matched the
+pinned SMU code, helper, idle mailbox and primary baseline. A diagnostic-only
+one-time reboot and 180-second recovery timer were armed. The bounded native
+client-12 down/up sequence completed in about eight seconds. Commands 7 and 6
+each returned queue 1/full PSP status 0x80000000; primary controls returned to
+their measured up baseline, and helper SRAM and clocks were restored. PSP
+control remained 0xf4. VCN version/status/power remained 0xffffffff both
+before and after the cycle. The unused recovery timer was stopped, evidence
+copied locally, and a direct reboot to another diagnostic boot requested to
+clear unknown indexed-window side effects. No desktop restore, BIOS EEPROM
+write or Pico flash write. No hardware-decoded frame yet.
+
+Fresh diagnostic boot 5c7ff47f-fc1d-4dae-9f4a-ed718fd2088a came up over
+SSH. The one-time GRUB entry was consumed and removed; /boot is read-only,
+the recovery timer and desktop services are inactive, and CPU0 remains on
+schedutil. Pico RAM profile vcn-driver-metadata-tmr reported 11 completed SPI
+passes, 3707/3707 verified changed replies, zero mismatches and zero faults.
+
+2026-09-27 14:29 UTC: accepted firmware does not expose the reset-page SMN word
+-------------------------------------------------------------------------
+On the fresh diagnostic boot, the bound VCN-disabled probe module again loaded
+intact type-13 VCN firmware: ret=0, status=0, fw_addr=0xf41fa00000. With VCN
+clocks and domain-power controls held active, domain-6 full-SMN controls read
+the expected 0 and 0x01010101. Full-address VCN reset-page 0x0900c004 read
+0xffffffff. PSP control stayed 0xf4 and BAR VCN version/status/power stayed
+0xffffffff before and after this read. All temporary clock controls restored.
+A 180-second diagnostic recovery timer and inspected one-time entry were
+armed before the known-risk read, then stopped/removed unused. Board remains
+in the same diagnostic boot with GPU bound and VCN registration disabled. No
+desktop restore or BIOS/Pico flash writes; no decoded frame.
+The existing consumed-entry cleanup refused this unconsumed staged entry as
+designed. A separate exact-hash cleanup removed the unused GRUB entry and
+flag; independent root-namespace checks confirmed both absent and /boot still
+read-only.
+
+2026-09-27 15:05 UTC: RAM-only PSP-driver status and RSMU trials; VCN still isolated
+--------------------------------------------------------------------------------
+Built and tested a PSP-driver SVC guard for the type-13 video-region control
+write. It preserves the normal allocator path and propagates an injected error
+through the existing cleanup. On a fresh diagnostic boot, the bound GPU accepted
+intact VCN firmware at 0xf41fa00000; VCN MMIO remained all ones. One earlier
+ordinary-entry boot under this profile failed SETUP_TMR because the VCN clock
+pulse must precede module insertion. We restaged the diagnostic entry, cold
+booted, and completed the intended trial without restoring the desktop.
+
+Then called the signed driver's native four-store client-12 RSMU initializer
+during SETUP_TMR under the same pre-insertion VCN clock pulse. The GPU bound,
+SETUP_TMR completed and the intact firmware load returned ret=0/status=0 at
+0xf41fa00000. VCN version/status/power were still 0xffffffff before and after.
+
+Finally added a RAM-only post-load guard for both reset service calls. Its
+27 real-instruction cases prove that injected first or second SVC failures
+return nonzero without marking firmware loaded. The live type-13 load still
+returned ret=0/status=0 at 0xf41fa00000, implying both software services
+returned zero, but all three VCN registers stayed 0xffffffff. SVC 0x7c does
+not read back the physical register, so zero cannot establish store acceptance.
+The Pico verified 754/754 substituted words over two complete passes with
+fault=0, mismatches=0, and no late decisions. The current BC250 boot is
+d6244495-2b8e-49da-85e0-7ece7429bc9c, diagnostic multi-user, GPU bound with
+VCN registration off, consumed GRUB entry removed. Clock controls restored.
+Neither BIOS EEPROM nor Pico flash was written; no hardware-decoded frame.
+2026-09-27: client-12 gasket policy and VCN memory-controller trials
+--------------------------------------------------------------------
+The BC250 SEC_GASKET policy has no client-12 0x0900cxxx records. Pinned
+Cezanne and Renoir policies have the same 51 ordered records, including a
+descriptor for 0x20180..0x20183 (VCN soft reset), 0x20108..0x20117 (cache
+size/offset), 0x20eb0..0x20eb7 (stack BAR) and 0x21078..0x2107f (firmware
+BAR). A RAM-only PSP-driver cave replayed them after successful TMR allocation
+and native RSMU12 setup. The source generator checks policy hashes and the
+ROM generator pins every modified address. Eight native TMR cases verified
+ordered writes, allocator-error skip and service-error propagation. The Pico
+verified 2228/2228 substituted replies in four boot passes, with fault0.
+
+On a VCN-disabled GPU bind, intact firmware loaded with PSP ret0/status0 at
+0xf41fa00000. Before/after load, UVD_VERSION and UVD_STATUS read deadbeef,
+and UVD_POWER_STATUS read 0x801 rather than the prior all-ones values. A
+PSP-side SVC7b read of the client-12 descriptor 0x0900c9a0 returned low28
+0x20180, matching the table write. A PSP-side read of plain 0x20180 returned
+low28 0xeadbeef, but this does not establish that plain SMN 0x20180 maps to
+the host BAR register, and the diagnostic status discards the high nibble.
+
+With VCN registration enabled, the kernel reached vcn_v2_0_start but waited
+ten times with UVD_STATUS 0x4 and no VCPU ready bit. Ring vcn_dec test failed
+-110, and amdgpu did not bind. Register trace: pre-start status deadbeef,
+power 0x801, PGFSM 0x200000, reset ffffffff; after MC setup, status 0x4,
+power 0x800, VCPU control 0x0ff20200, reset still ffffffff. PSP-reported
+firmware address was 0xf41fa00000, but firmware-cache BAR, stack BAR, cache
+size and offset all read ffffffff after programming. A BC250-only module
+replaced soft-reset read-modify-write with explicit assert/release values;
+status stayed 0x4 and the same ring timeout occurred. Register readback may
+be blocked or write-only, so this is not proof of a fused-off VCN, but the
+missing memory-controller response is now a concrete boundary to investigate.
+No hardware-decoded frame. No BIOS EEPROM or Pico flash writes. Board left on
+diagnostic boot 584cb4e4-2297-4415-978e-91dc98dde4af, GPU unbound, with
+bc250_vcn_once=1 recovery staged; /boot read-only. Desktop not restored.
+
+2026-09-27: direct-VRAM firmware placement control
+---------------------------------------------------
+Using the same RAM-only client-12 gasket profile and VCN clock plan, a pinned
+diagnostic module selected the direct VRAM VCN firmware path instead of PSP
+loading. The firmware BO GPU address was 0xf41fc00000 and PSP TMR address
+zero, confirming the branch changed. The VCN firmware-cache BAR, stack BAR,
+cache size and offset still read ffffffff; UVD_STATUS stayed 0x4 through ten
+VCPU waits, and the vcn_dec ring timed out -110. The GPU did not bind. This
+rules out PSP-TMR placement as the sole cause; it does not establish the VCN
+is physically fused off. Pico verified 3342/3342 changed replies across six
+boot passes, mismatch0/fault0. No BIOS EEPROM or Pico flash writes. Board left
+on diagnostic boot 043bb68e-2186-4744-aac7-cc969e9bdabb, GPU unbound, with
+bc250_vcn_once=1 recovery staged; /boot read-only. Desktop not restored.

@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Compare VCN registers before/after one intact PSP load on a bound GPU."""
+"""Report one PSP-side SMN readback during an intact VCN load.
+
+The RAM-only driver deliberately reports a nonzero diagnostic PSP status.
+Stage a second diagnostic boot before this possibly hanging PSP-side read.
+"""
 import argparse
 import fcntl
 import hashlib
@@ -22,6 +26,8 @@ PRESET_SHA = 'b88384a7c092413817ba90f7d3776dfb306f62a36576c5772db29871f8c6d685'
 DEPS = ('drm_display_helper', 'gpu-sched', 'amdxcp', 'ttm', 'cec',
         'drm_suballoc_helper', 'drm_exec', 'video', 'drm_ttm_helper',
         'drm_buddy', 'i2c-algo-bit', 'drm_panel_backlight_quirks')
+STAGE_SHA = '0cca277fbeecbf71512ae253644af0964458f8324ca34df84934798e01a198dc'
+ENTRY_SHA = '9675158c6e976ec9fee3741eac39d4a81e128577e62a5684049a6d5a277d6ef9'
 
 
 def require(condition, message):
@@ -36,8 +42,14 @@ def sha(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path,
-                        default=ROOT / 'kernel/late-vcn-psp-tmr-v03-20260927.jsonl')
+                        default=ROOT / 'kernel/late-vcn-psp-readback-v08-20260927.jsonl')
+    parser.add_argument('--read-address', type=lambda value: int(value, 0),
+                        default=0x0900c004,
+                        help='SMN address compiled into this RAM-only profile')
     args = parser.parse_args()
+    require(args.read_address in (0x0900c004, 0x0900c9a0, 0x00020f24,
+                                  0x00020180, 0x0002107c, 0x0001f810),
+            'Unexpected SMN read target')
     require(os.geteuid() == 0, 'Root required')
     require(os.uname().release == '7.2.5-200.fc44.x86_64', 'Wrong kernel')
     flags = Path('/proc/cmdline').read_text().split()
@@ -57,6 +69,10 @@ def main():
     require(sha(ROOT / 'vcn-clock-test.py') == CLOCK_SHA and
             sha(ROOT / 'vcn-preset-clock-test.py') == PRESET_SHA,
             'Clock helper hash mismatch')
+    stage = ROOT / 'kernel/stage-psp-boot.sh'
+    require(sha(stage) == STAGE_SHA and
+            sha(ROOT / 'kernel/psp-test-custom.cfg') == ENTRY_SHA,
+            'Diagnostic recovery entry changed')
     for service in ('sddm', 'cyan-skillfish-governor-smu', 'bc250-cu-restore'):
         require(subprocess.run(['systemctl', 'is-active', '--quiet', service]).returncode != 0,
                 f'{service} is active')
@@ -81,7 +97,8 @@ def main():
 
         emit('start', {'boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
                        'module_sha256': MODULE_SHA, 'firmware_sha256': FIRMWARE_SHA,
-                       'script_sha256': sha(Path(__file__))})
+                       'script_sha256': sha(Path(__file__)),
+                       'read_address': hex(args.read_address)})
         for dependency in DEPS:
             subprocess.run(['modprobe', dependency], check=True)
         require(not Path('/sys/module/amdgpu').exists(), 'Dependency loaded amdgpu')
@@ -101,6 +118,16 @@ def main():
                         'Diagnostic GPU failed to bind')
                 require(clock.clock.psp_probe_path().is_file(), 'PSP probe missing')
                 experiment.probe_registers()
+                # This re-arms the same diagnostic path for a PDU recovery if
+                # the PSP-side read stalls. The caller removes it after a
+                # completed trial; leave it in place on any uncertainty.
+                subprocess.run(['unshare', '--mount', '--propagation', 'private',
+                                'bash', str(stage)], check=True)
+                require(subprocess.check_output(['grub2-editenv', '-', 'list'],
+                                                text=True).strip() == 'bc250_vcn_once=1'
+                        and sha(Path('/boot/grub2/custom.cfg')) == ENTRY_SHA,
+                        'Diagnostic recovery entry not armed')
+                emit('recovery_entry_staged', {'sha256': ENTRY_SHA})
                 experiment.psp_load()
                 rows = [line for line in subprocess.check_output(
                     ['dmesg', '--color=never'], text=True).splitlines()
@@ -114,10 +141,21 @@ def main():
                 result = {'ret': int(match[1]), 'status': int(match[2], 16),
                           'fw_addr': int(match[3], 16)}
                 emit('psp_response', result)
-                require(result == {'ret': 0, 'status': 0, 'fw_addr': 0xf41fa00000},
-                        'Unexpected PSP response; do not issue another request')
+                if (result['status'] & 0xf0000000) == 0x70000000:
+                    emit('psp_smn_readback',
+                         {'address': hex(args.read_address),
+                          'value_low28': hex(result['status'] & 0x0fffffff),
+                          'full_word_known': False,
+                          'service_completed': True})
+                elif (result['status'] & 0xffff0000) == 0xffff0000:
+                    emit('psp_smn_read_service_error',
+                         {'address': hex(args.read_address),
+                          'status': hex(result['status'])})
+                else:
+                    raise RuntimeError('Unexpected PSP response; no further request')
                 emit('diagnostic_complete', {'hardware_decode_verified': False,
-                                             'gpu_bound': (gpu / 'driver').exists()})
+                                             'gpu_bound': (gpu / 'driver').exists(),
+                                             'recovery_entry_still_staged': True})
             finally:
                 if experiment.attempted:
                     require(smu.alive(), 'SMU not responding; stop for recovery')

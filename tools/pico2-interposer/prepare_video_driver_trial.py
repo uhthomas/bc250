@@ -21,6 +21,11 @@ TOS, TOS_LEN = 0x8eac00, 0x14350
 DRIVER, DRIVER_LEN = 0x984f00, 0x1a770
 HOOK, CAVE = DRIVER + 0x9622, DRIVER + 0x17d00
 TMR_HOOK, TMR_CAVE = DRIVER + 0xe85e, DRIVER + 0x17d40
+SVC_HOOK, SVC_CAVE = DRIVER + 0xe9c4, DRIVER + 0x17d80
+POSTLOAD_HOOK, POSTLOAD_CAVE = DRIVER + 0xfc1e, DRIVER + 0x17dc0
+READBACK_HOOK, READBACK_CAVE = DRIVER + 0xfc1e, DRIVER + 0x17e00
+GASKET_CAVE = DRIVER + 0x17e00
+GASKET_READBACK_CAVE = DRIVER + 0x17c80
 KEY_START, KEY_END = 0x9dbda0, 0x9dbef0
 PSS = padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=32)
 
@@ -59,7 +64,28 @@ def main():
     ap.add_argument('--cave', required=True, type=Path)
     ap.add_argument('--tmr-hook', type=Path)
     ap.add_argument('--tmr-cave', type=Path)
-    ap.add_argument('--mode', required=True, choices=('noop', 'metadata', 'metadata-tmr'))
+    ap.add_argument('--svc-hook', type=Path)
+    ap.add_argument('--svc-cave', type=Path)
+    ap.add_argument('--postload-hook', type=Path)
+    ap.add_argument('--postload-cave', type=Path)
+    ap.add_argument('--readback-hook', type=Path)
+    ap.add_argument('--readback-cave', type=Path)
+    ap.add_argument('--gasket-cave', type=Path)
+    ap.add_argument('--mode', required=True,
+                    choices=('noop', 'metadata', 'metadata-tmr',
+                             'metadata-tmr-svc-guard',
+                             'metadata-tmr-svc-guard-rsmu12',
+                             'metadata-tmr-svc-guard-rsmu12-postload',
+                             'metadata-tmr-svc-guard-rsmu12-readback',
+                             'metadata-tmr-svc-guard-rsmu12-readback-uvd',
+                             'metadata-tmr-svc-guard-rsmu12-gasket',
+                             'metadata-tmr-svc-guard-rsmu12-gasket-readback',
+                             'metadata-tmr-svc-guard-rsmu12-gasket-readback-cache',
+                             'metadata-tmr-svc-guard-rsmu12-gasket-readback-cache-write',
+                             'metadata-tmr-svc-guard-rsmu12-gasket-readback-power',
+                             'metadata-tmr-svc-guard-rsmu12-gasket-readback-reset',
+                             'metadata-tmr-svc-guard-rsmu12-gasket-readback-postpower-reset',
+                             'metadata-tmr-svc-guard-rsmu12-gasket-readback-postpower-cache'))
     ap.add_argument('--output-dir', required=True, type=Path)
     a = ap.parse_args()
 
@@ -81,8 +107,8 @@ def main():
         raise ValueError(f'unexpected original startup BL: {clean[HOOK:HOOK+4].hex()}')
     if (a.tmr_hook is None) != (a.tmr_cave is None):
         raise ValueError('TMR hook and cave must be supplied together')
-    if (a.mode == 'metadata-tmr') != (a.tmr_hook is not None):
-        raise ValueError('TMR patch belongs only to metadata-tmr mode')
+    if (a.mode.startswith('metadata-tmr')) != (a.tmr_hook is not None):
+        raise ValueError('TMR patch belongs only to metadata-tmr modes')
     if a.tmr_hook is not None:
         tmr_hook, tmr_cave = a.tmr_hook.read_bytes(), a.tmr_cave.read_bytes()
         if len(tmr_hook) != 4 or not 8 <= len(tmr_cave) <= 0x80 or len(tmr_cave) % 4:
@@ -93,6 +119,70 @@ def main():
             raise ValueError('TMR driver cave not empty')
     else:
         tmr_hook = tmr_cave = b''
+    if (a.svc_hook is None) != (a.svc_cave is None):
+        raise ValueError('SVC hook and cave must be supplied together')
+    if (a.mode.startswith('metadata-tmr-svc-guard')) != (a.svc_hook is not None):
+        raise ValueError('SVC guard belongs only to SVC-guard modes')
+    if a.svc_hook is not None:
+        svc_hook, svc_cave = a.svc_hook.read_bytes(), a.svc_cave.read_bytes()
+        if len(svc_hook) != 8 or not 8 <= len(svc_cave) <= 0x80 or len(svc_cave) % 4:
+            raise ValueError('unexpected SVC guard geometry')
+        if clean[SVC_HOOK:SVC_HOOK+8] != bytes.fromhex('32 20 40 f6 22 45 05 e0'):
+            raise ValueError('unexpected original post-SVC instructions')
+        if clean[SVC_CAVE:SVC_CAVE+len(svc_cave)] != bytes(len(svc_cave)):
+            raise ValueError('SVC driver cave not empty')
+    else:
+        svc_hook = svc_cave = b''
+    if (a.postload_hook is None) != (a.postload_cave is None):
+        raise ValueError('post-load hook and cave must be supplied together')
+    if a.mode.endswith('-postload') != (a.postload_hook is not None):
+        raise ValueError('post-load guard belongs only to the postload mode')
+    if a.postload_hook is not None:
+        postload_hook = a.postload_hook.read_bytes()
+        postload_cave = a.postload_cave.read_bytes()
+        if len(postload_hook) != 4 or not 8 <= len(postload_cave) <= 0x40 or len(postload_cave) % 4:
+            raise ValueError('unexpected post-load guard geometry')
+        if clean[POSTLOAD_HOOK:POSTLOAD_HOOK+4] != bytes.fromhex('07 f0 5f fa'):
+            raise ValueError('unexpected original post-load helper call')
+        if clean[POSTLOAD_CAVE:POSTLOAD_CAVE+len(postload_cave)] != bytes(len(postload_cave)):
+            raise ValueError('post-load driver cave not empty')
+    else:
+        postload_hook = postload_cave = b''
+    if (a.readback_hook is None) != (a.readback_cave is None):
+        raise ValueError('readback hook and cave must be supplied together')
+    gasket_readback = a.mode.startswith('metadata-tmr-svc-guard-rsmu12-gasket-readback')
+    readback_offset = GASKET_READBACK_CAVE if gasket_readback else READBACK_CAVE
+    if (a.mode in ('metadata-tmr-svc-guard-rsmu12-readback',
+                   'metadata-tmr-svc-guard-rsmu12-readback-uvd',
+                   'metadata-tmr-svc-guard-rsmu12-gasket-readback',
+                   'metadata-tmr-svc-guard-rsmu12-gasket-readback-cache',
+                   'metadata-tmr-svc-guard-rsmu12-gasket-readback-cache-write',
+                   'metadata-tmr-svc-guard-rsmu12-gasket-readback-power',
+                   'metadata-tmr-svc-guard-rsmu12-gasket-readback-reset',
+                   'metadata-tmr-svc-guard-rsmu12-gasket-readback-postpower-reset',
+                   'metadata-tmr-svc-guard-rsmu12-gasket-readback-postpower-cache')) != (a.readback_hook is not None):
+        raise ValueError('readback patch belongs only to the readback mode')
+    if a.readback_hook is not None:
+        readback_hook = a.readback_hook.read_bytes()
+        readback_cave = a.readback_cave.read_bytes()
+        if len(readback_hook) != 4 or not 8 <= len(readback_cave) <= 0x80 or len(readback_cave) % 4:
+            raise ValueError('unexpected readback patch geometry')
+        if clean[READBACK_HOOK:READBACK_HOOK+4] != bytes.fromhex('07 f0 5f fa'):
+            raise ValueError('unexpected original post-load helper call')
+        if clean[readback_offset:readback_offset+len(readback_cave)] != bytes(len(readback_cave)):
+            raise ValueError('readback driver cave not empty')
+    else:
+        readback_hook = readback_cave = b''
+    if (a.mode.endswith('-gasket') or gasket_readback) != (a.gasket_cave is not None):
+        raise ValueError('gasket patch belongs only to gasket mode')
+    if a.gasket_cave is not None:
+        gasket_cave = a.gasket_cave.read_bytes()
+        if not 0x1a0 <= len(gasket_cave) <= 0x200 or len(gasket_cave) % 4:
+            raise ValueError('unexpected gasket patch geometry')
+        if clean[GASKET_CAVE:GASKET_CAVE+len(gasket_cave)] != bytes(len(gasket_cave)):
+            raise ValueError('gasket driver cave not empty')
+    else:
+        gasket_cave = b''
 
     modified = bytearray(clean)
     for command, reply in key_words:
@@ -103,6 +193,17 @@ def main():
     if tmr_hook:
         modified[TMR_HOOK:TMR_HOOK+4] = tmr_hook
         modified[TMR_CAVE:TMR_CAVE+len(tmr_cave)] = tmr_cave
+    if svc_hook:
+        modified[SVC_HOOK:SVC_HOOK+len(svc_hook)] = svc_hook
+        modified[SVC_CAVE:SVC_CAVE+len(svc_cave)] = svc_cave
+    if postload_hook:
+        modified[POSTLOAD_HOOK:POSTLOAD_HOOK+len(postload_hook)] = postload_hook
+        modified[POSTLOAD_CAVE:POSTLOAD_CAVE+len(postload_cave)] = postload_cave
+    if readback_hook:
+        modified[READBACK_HOOK:READBACK_HOOK+len(readback_hook)] = readback_hook
+        modified[readback_offset:readback_offset+len(readback_cave)] = readback_cave
+    if gasket_cave:
+        modified[GASKET_CAVE:GASKET_CAVE+len(gasket_cave)] = gasket_cave
     driver_body = modified[DRIVER+0x100:DRIVER+DRIVER_LEN-256]
     modified[DRIVER+0xd0:DRIVER+0xf0] = hashlib.sha256(driver_body).digest()
 
@@ -128,6 +229,13 @@ def main():
                       (CAVE, CAVE+len(cave)),
                       (TMR_HOOK & ~3, (TMR_HOOK+7) & ~3),
                       (TMR_CAVE, TMR_CAVE+len(tmr_cave)),
+                      (SVC_HOOK, SVC_HOOK+len(svc_hook)),
+                      (SVC_CAVE, SVC_CAVE+len(svc_cave)),
+                      (POSTLOAD_HOOK & ~3, (POSTLOAD_HOOK+len(postload_hook)+3) & ~3),
+                      (POSTLOAD_CAVE, POSTLOAD_CAVE+len(postload_cave)),
+                      (READBACK_HOOK & ~3, (READBACK_HOOK+len(readback_hook)+3) & ~3),
+                      (readback_offset, readback_offset+len(readback_cave)),
+                      (GASKET_CAVE, GASKET_CAVE+len(gasket_cave)),
                       (DRIVER+DRIVER_LEN-256, DRIVER+DRIVER_LEN))
     if any(not any(lo <= command & 0xffffff < hi for lo, hi in allowed_ranges)
            for command, _ in changed):
@@ -174,6 +282,15 @@ def main():
                    tmr_hook=(hex(TMR_HOOK) if tmr_hook else None),
                    tmr_cave=(hex(TMR_CAVE) if tmr_cave else None),
                    tmr_cave_bytes=len(tmr_cave),
+                   svc_hook=(hex(SVC_HOOK) if svc_hook else None),
+                   svc_cave=(hex(SVC_CAVE) if svc_cave else None),
+                   svc_cave_bytes=len(svc_cave),
+                   postload_hook=(hex(POSTLOAD_HOOK) if postload_hook else None),
+                   postload_cave=(hex(POSTLOAD_CAVE) if postload_cave else None),
+                   postload_cave_bytes=len(postload_cave),
+                   readback_hook=(hex(READBACK_HOOK) if readback_hook else None),
+                   readback_cave=(hex(readback_offset) if readback_cave else None),
+                   readback_cave_bytes=len(readback_cave),
                    original_tos_body=clean[TOS:TOS+TOS_LEN-256] == modified[TOS:TOS+TOS_LEN-256],
                    bios_flash_allowed=False)
     private_write(a.output_dir/'summary.json', (json.dumps(summary, indent=2)+'\n').encode())

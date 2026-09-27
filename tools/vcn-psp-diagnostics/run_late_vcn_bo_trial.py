@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare VCN registers before/after one intact PSP load on a bound GPU."""
+"""Compare direct VRAM VCN firmware loading with the PSP-TMR trial."""
 import argparse
 import fcntl
 import hashlib
@@ -14,14 +14,16 @@ import sys
 import time
 
 ROOT = Path('/var/lib/bc250/validation/video-20260922')
-MODULE = ROOT / 'kernel/amdgpu-vcn-late-psp-probe.ko'
-MODULE_SHA = '77c0037854a47ee411f5cc42e5833378190360e3d69b8df7a4b9d903debaae75'
+MODULE = ROOT / 'kernel/amdgpu-vcn-bo-trial.ko'
+MODULE_SHA = 'ae70ef2dd3dc227949495e0aaad70bcfd4584b868a28d93817656ad758557ff8'
 FIRMWARE_SHA = 'a9ec155695b5020009d3986cfd4ebd00ad9ddbd12ac7e5fa15ec86b8a571dbe5'
 CLOCK_SHA = '1bc8d228c5e61078e5317ee12e2292c29773f1fe3ba679c51065200bfd299007'
 PRESET_SHA = 'b88384a7c092413817ba90f7d3776dfb306f62a36576c5772db29871f8c6d685'
 DEPS = ('drm_display_helper', 'gpu-sched', 'amdxcp', 'ttm', 'cec',
         'drm_suballoc_helper', 'drm_exec', 'video', 'drm_ttm_helper',
         'drm_buddy', 'i2c-algo-bit', 'drm_panel_backlight_quirks')
+STAGE_SHA = '0cca277fbeecbf71512ae253644af0964458f8324ca34df84934798e01a198dc'
+ENTRY_SHA = '9675158c6e976ec9fee3741eac39d4a81e128577e62a5684049a6d5a277d6ef9'
 
 
 def require(condition, message):
@@ -36,7 +38,9 @@ def sha(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path,
-                        default=ROOT / 'kernel/late-vcn-psp-tmr-v03-20260927.jsonl')
+                        default=ROOT / 'kernel/late-vcn-bo-trial-v01-20260927.jsonl')
+    parser.add_argument('--enable-vcn', action='store_true',
+                        help='Run the kernel VCN initialization and ring test')
     args = parser.parse_args()
     require(os.geteuid() == 0, 'Root required')
     require(os.uname().release == '7.2.5-200.fc44.x86_64', 'Wrong kernel')
@@ -57,6 +61,10 @@ def main():
     require(sha(ROOT / 'vcn-clock-test.py') == CLOCK_SHA and
             sha(ROOT / 'vcn-preset-clock-test.py') == PRESET_SHA,
             'Clock helper hash mismatch')
+    stage = ROOT / 'kernel/stage-psp-boot.sh'
+    require(sha(stage) == STAGE_SHA and
+            sha(ROOT / 'kernel/psp-test-custom.cfg') == ENTRY_SHA,
+            'Diagnostic recovery entry changed')
     for service in ('sddm', 'cyan-skillfish-governor-smu', 'bc250-cu-restore'):
         require(subprocess.run(['systemctl', 'is-active', '--quiet', service]).returncode != 0,
                 f'{service} is active')
@@ -93,10 +101,34 @@ def main():
                 # The patched PSP driver needs this domain ready during SETUP_TMR.
                 experiment.pulse(plan, probe=False, power=True)
                 experiment.require_programmed_clocks()
-                emit('insmod_intent', {'bc250_vcn': False, 'bc250_vcn_psp_probe': True})
-                result = subprocess.run(['insmod', str(MODULE), 'bc250_vcn=0',
-                                         'bc250_vcn_psp_probe=1'], timeout=90)
+                # SETUP_TMR itself runs the experimental writes, so stage a
+                # diagnostic recovery entry before loading the GPU driver.
+                subprocess.run(['unshare', '--mount', '--propagation', 'private',
+                                'bash', str(stage)], check=True)
+                require(subprocess.check_output(['grub2-editenv', '-', 'list'],
+                                                text=True).strip() == 'bc250_vcn_once=1'
+                        and sha(Path('/boot/grub2/custom.cfg')) == ENTRY_SHA,
+                        'Diagnostic recovery entry not armed')
+                emit('recovery_entry_staged', {'sha256': ENTRY_SHA})
+                emit('insmod_intent', {'bc250_vcn': args.enable_vcn,
+                                      'bc250_vcn_psp_probe': not args.enable_vcn})
+                result = subprocess.run(['insmod', str(MODULE),
+                                         f'bc250_vcn={int(args.enable_vcn)}',
+                                         f'bc250_vcn_psp_probe={int(not args.enable_vcn)}'],
+                                        timeout=90)
                 emit('insmod_return', {'returncode': result.returncode})
+                emit('kernel_rows_after_insmod', [line for line in subprocess.check_output(
+                    ['dmesg', '--color=never'], text=True).splitlines()
+                    if any(mark in line.lower() for mark in
+                           ('amdgpu', 'vcn', 'uvd', 'psp', 'setup_tmr'))][-120:])
+                emit('vcn_register_trace', [line for line in subprocess.check_output(
+                    ['dmesg', '--color=never'], text=True).splitlines()
+                    if 'BC250 VCN trace' in line or 'BC250 VCN MC' in line])
+                if args.enable_vcn:
+                    emit('vcn_init_result', {'gpu_bound': (gpu / 'driver').exists(),
+                                             'insmod_returncode': result.returncode,
+                                             'hardware_decode_verified': False})
+                    return
                 require(result.returncode == 0 and (gpu / 'driver').exists(),
                         'Diagnostic GPU failed to bind')
                 require(clock.clock.psp_probe_path().is_file(), 'PSP probe missing')
@@ -117,7 +149,8 @@ def main():
                 require(result == {'ret': 0, 'status': 0, 'fw_addr': 0xf41fa00000},
                         'Unexpected PSP response; do not issue another request')
                 emit('diagnostic_complete', {'hardware_decode_verified': False,
-                                             'gpu_bound': (gpu / 'driver').exists()})
+                                             'gpu_bound': (gpu / 'driver').exists(),
+                                             'recovery_entry_still_staged': True})
             finally:
                 if experiment.attempted:
                     require(smu.alive(), 'SMU not responding; stop for recovery')
