@@ -27,7 +27,8 @@ def assemble(executable, program_name='fast_select.pio'):
 
 def replay(blob, rom, program, system_hz, *, start_index=0, commands=6,
            patch_index=2, sync_cycles=2, phase_fifths=0, guarded=False,
-           corrupt_expected_patch=False):
+           corrupt_expected_patch=False, sparse_default_pass=False,
+           early_command_drive=False):
     meta, data = unpack(blob)
     if meta['flags'] or len(rom) != 0x1000000 or system_hz < meta['sample_hz']:
         raise ValueError('unflagged physical trace, full ROM and adequate model clock required')
@@ -45,7 +46,9 @@ def replay(blob, rom, program, system_hz, *, start_index=0, commands=6,
                for i, t in enumerate(tx)]
     if corrupt_expected_patch and not guarded:
         raise ValueError('expected-command corruption requires guarded program')
-    fifo = collections.deque(
+    if sparse_default_pass and (not guarded or patch_index == 0):
+        raise ValueError('sparse guarded route needs a preceding PASS transaction')
+    fifo = collections.deque() if sparse_default_pass else collections.deque(
         word for i, (transaction, reply) in enumerate(zip(tx, replies))
         for word in ((int(i == patch_index),
                       (transaction['opcode'] << 24) | transaction['address'] |
@@ -79,6 +82,12 @@ def replay(blob, rom, program, system_hz, *, start_index=0, commands=6,
                 for index, transaction in enumerate(tx):
                     if transaction['start_sample'] <= absolute < transaction['end_sample']:
                         rises[index].append((state['flash_cs'], state['oe'], state['data']))
+                        if (sparse_default_pass and index == patch_index - 1 and
+                                len(rises[index]) == 32):
+                            target = tx[patch_index]
+                            fifo.extend((1, (target['opcode'] << 24) |
+                                         target['address'] |
+                                         int(corrupt_expected_patch), replies[patch_index]))
                         if (len(rises[index]) == 1 and index != patch_index and
                                 not (corrupt_expected_patch and index > patch_index)):
                             if last_select_cycle is None:
@@ -114,7 +123,9 @@ def replay(blob, rom, program, system_hz, *, start_index=0, commands=6,
                                    missing_output_edges=missing,
                                    actual=f'{actual:08x}', expected=f'{expected:08x}'))
         elif not selected and corrupt_expected_patch:
-            if any(oe for _, oe, _ in edges) or 0 not in irqs:
+            command_edges = edges[:31] if early_command_drive else edges[:32]
+            if (any(oe for _, oe, _ in command_edges + edges[32:]) or
+                    0 not in irqs):
                 errors.append(dict(row=index, error='guard failed to suppress wrong command'))
     minimum_setup_ns = min(setup_cycles, default=0) * 1e9 / system_hz
     expected_pass_rows = patch_index if corrupt_expected_patch else commands - 1
@@ -126,6 +137,7 @@ def replay(blob, rom, program, system_hz, *, start_index=0, commands=6,
                 system_clock_hz=system_hz, sync_cycles=sync_cycles,
                 phase_fifths=phase_fifths, patch_index=patch_index,
                 guarded=guarded, corrupt_expected_patch=corrupt_expected_patch,
+                sparse_default_pass=sparse_default_pass,
                 fault_irq_raised=0 in irqs,
                 patch_address=f'{tx[patch_index]["address"]:06x}',
                 minimum_modeled_flash_cs_setup_ns=minimum_setup_ns,

@@ -1,9 +1,11 @@
 # Direct VCN-key external-flash pair
 
-These scripts prepare and independently check a **private, untested** 16 MiB
-image pair for a future isolated SPI interposer. They do not access the BC250
-or program flash. The patched image is **invalid as a standalone BIOS and must
-never be written to the board's on-board EEPROM**.
+These scripts prepare and independently check a **private** 16 MiB image pair.
+They do not access the BC250 or program flash. A derived RAM-only Pico overlay
+was [tested on the board](../../docs/pico2-type51-vcn-trial.md): it booted
+Fedora and the PSP recognized the VCN key, but unmodified VCN firmware was
+still rejected with `0x80000029`. The patched image is **invalid as a
+standalone BIOS and must never be written to the board's on-board EEPROM**.
 
 The clean image is the exact working BC250 backup with SHA-256
 `f1251268fc129d6799fcb75041017ee739250d71b7c9d1981d67016923834183`.
@@ -13,7 +15,7 @@ Cezanne VCN2 usage-6 record. Exactly 272 bytes differ. The database header,
 stored body digest and signature remain original, so the patched image alone
 fails its body integrity check. The proposed interposer would supply the
 patched body for the loader's RAM copy and the clean body for its later hash
-read. That timing and this board's read order have not been measured.
+read. The measured read order and physical trials are in the board report.
 
 The pair prepared on 2026-09-25 is private under
 `/tmp/bc250-vcn-direct-pair-x_pldzsl`. Its patched SHA-256 is
@@ -27,10 +29,11 @@ the files themselves; **no external chip readback has occurred**.
 The prepared type-51 object matches the pinned native loader model's input
 byte for byte. With either tested RAM fill, the model accepts it only when the
 later hash read sees the clean body; without a switch it rejects it. The
-modeled type-13 VCN firmware authentication then returns success. That does
-not prove the installed encrypted loader, full boot, usage-44 compatibility,
-VCN power/rings or decoded frames. Replacing usage 44 may break a boot path
-that the bounded firmware inventory did not reveal.
+modeled type-13 VCN firmware authentication then returns success. The live
+bounded PSP key-control changed as predicted, but the full firmware request
+returned `0x80000029` and VCN registers remained inaccessible. No decoded
+frame was produced. Replacing usage 44 could still affect a later path that
+the bounded firmware inventory did not reveal.
 
 To regenerate from the exact backup and donor database:
 
@@ -48,9 +51,8 @@ that an active interposer switches safely. The
 [hardware-decode plan](../../docs/video-decode-next-step.md) keeps the normal
 board EEPROM intact.
 
-The [Pico 2/original-flash overlay concept](../../docs/pico2-original-flash-overlay.md)
-could use this same pair as an **offline source** for a small SRAM image rather
-than programming two extra flash chips. That concept is not implemented or
-timing-validated. It still requires physically isolating the original flash's
-CS# path; J4004 alone cannot prevent MISO contention. The scripts and manifest
-above remain scoped to the two-external-flash experiment.
+The [Pico 2/original-flash overlay](../../docs/pico2-type51-vcn-trial.md)
+now uses this pair as an offline source for a 69-word SRAM profile. Its
+original-flash CS# leg is physically isolated and switched by the Pico;
+J4004 alone cannot prevent MISO contention. The full 16 MiB files and
+their manifest remain private offline inputs, not flashable board images.

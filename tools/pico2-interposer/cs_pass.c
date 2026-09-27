@@ -1,63 +1,35 @@
 /* Original BIOS flash CS# pass-through diagnostic. RAM-only Pico image.
- * GP2 observes motherboard CS#, GP7 sinks the lifted flash CS# leg, and
- * GP26 senses the flash's own 3.3 V rail through a 10k/10k divider.
+ * GP2 observes motherboard CS#; GP7 sinks the lifted flash CS# leg.
+ * The existing board-powered resistor releases flash CS# to its own VCC.
  * MISO is always an input; no firmware bytes are substituted here.
  */
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 #include "pico/stdlib.h"
-#include "hardware/adc.h"
 #include "hardware/clocks.h"
 #include "hardware/pio.h"
 #include "hardware/vreg.h"
-#include "hardware/structs/pads_bank0.h"
 #include "cs_open_drain.pio.h"
 #include "pins.h"
 
-enum { FLASH_CS = 7u, VCC_SENSE = 26u, CS_SM = 0u };
-enum { BOARD_ON_ADC = 1740u, BOARD_OFF_ADC = 1675u, BOARD_SETTLE_US = 2000u };
+enum { FLASH_CS = 7u, CS_SM = 0u };
 static PIO const pio = pio0;
 static uint pio_offset;
 static bool armed;
 static bool gate;
-static uint16_t vcc_adc;
-static uint64_t high_since;
 
 static void gate_off(void) {
     gpio_set_oeover(FLASH_CS, GPIO_OVERRIDE_LOW);
     gate = false;
 }
 
-static void poll_power(void) {
-    vcc_adc = adc_read();
-    uint64_t now = time_us_64();
-    if (!armed || vcc_adc < BOARD_OFF_ADC) {
-        high_since = 0;
-        if (gate) gate_off();
-        return;
-    }
-    if (vcc_adc < BOARD_ON_ADC) {
-        high_since = 0;
-        return;
-    }
-    if (!high_since) high_since = now;
-    if (!gate && now - high_since >= BOARD_SETTLE_US) {
-        /* The PIO output latch is forced LOW independently of this OE gate. */
-        gpio_set_oeover(FLASH_CS, GPIO_OVERRIDE_NORMAL);
-        gate = true;
-    }
-}
-
 static void status(void) {
-    printf("BC250-PICO2-CS-PASS v1 clock_hz=%" PRIu32
-           " armed=%u gate=%u vcc_adc=%u vcc_mv_approx=%" PRIu32
-           " host_cs=%u flash_cs=%u pio_oe=%u out_override=LOW"
+    printf("BC250-PICO2-CS-PASS v2 clock_hz=%" PRIu32
+           " armed=%u gate=%u host_cs=%u flash_cs_input=DISABLED pio_oe=%u out_override=LOW"
            " miso=INPUT bios_write=UNAVAILABLE\n",
            clock_get_hz(clk_sys), armed ? 1u : 0u, gate ? 1u : 0u,
-           vcc_adc, (uint32_t)vcc_adc * 6600u / 4095u,
            gpio_get(BC250_CS) ? 1u : 0u,
-           gpio_get(FLASH_CS) ? 1u : 0u,
            (unsigned)((pio->dbg_padoe >> FLASH_CS) & 1u));
 }
 
@@ -67,17 +39,24 @@ static void command(const char *line) {
     } else if (!strcmp(line, "arm-pass")) {
         if (armed) {
             printf("ERROR already armed\n");
-        } else if (!gpio_get(BC250_CS)) {
-            printf("ERROR host CS# must be high before arming\n");
         } else {
-            high_since = 0;
+            /* Restart at release/wait-for-high so a previous cancelled read
+             * cannot leave PIO OE asserted when the override is removed. */
+            gate_off();
+            pio_sm_set_enabled(pio, CS_SM, false);
+            pio_sm_restart(pio, CS_SM);
+            pio_sm_exec(pio, CS_SM, pio_encode_jmp(pio_offset));
+            pio_sm_set_consecutive_pindirs(pio, CS_SM, FLASH_CS, 1, false);
+            pio_sm_set_enabled(pio, CS_SM, true);
+            sleep_us(10);
+            gpio_set_oeover(FLASH_CS, GPIO_OVERRIDE_NORMAL);
             armed = true;
-            printf("ARMED CS-PASS GP7=open-drain-sink GP26=VCC-sense gate=WAITING\n");
+            gate = true;
+            printf("ARMED CS-PASS GP7=open-drain-sink wait-for-host-CS-high\n");
         }
     } else if (!strcmp(line, "cancel")) {
         gate_off();
         armed = false;
-        high_since = 0;
         printf("CANCELLED CS-PASS output=OFF\n");
     } else {
         printf("ERROR commands: status; arm-pass; cancel\n");
@@ -89,10 +68,12 @@ int main(void) {
     /* Set the fail-safe pad overrides before any PIO setup or USB wait. */
     gpio_init(FLASH_CS);
     gpio_disable_pulls(FLASH_CS);
+    gpio_set_input_enabled(FLASH_CS, false);
     gpio_set_outover(FLASH_CS, GPIO_OVERRIDE_LOW);
     gate_off();
     gpio_init(BC250_CS);
     gpio_disable_pulls(BC250_CS);
+    gpio_set_input_enabled(BC250_CS, true);
     gpio_set_oeover(BC250_CS, GPIO_OVERRIDE_LOW);
     gpio_init(BC250_MISO);
     gpio_disable_pulls(BC250_MISO);
@@ -108,15 +89,14 @@ int main(void) {
         for (;;) { printf("ERROR clock setup failed; output off\n"); sleep_ms(1000); }
     }
 
-    adc_init();
-    adc_gpio_init(VCC_SENSE);
-    adc_select_input(VCC_SENSE - 26u);
     pio_sm_claim(pio, CS_SM);
     pio_offset = pio_add_program(pio, &cs_open_drain_program);
     pio_gpio_init(pio, BC250_CS);
     pio_gpio_init(pio, FLASH_CS);
     gpio_disable_pulls(BC250_CS);
     gpio_disable_pulls(FLASH_CS);
+    gpio_set_input_enabled(BC250_CS, true);
+    gpio_set_input_enabled(FLASH_CS, false);
     gpio_set_outover(FLASH_CS, GPIO_OVERRIDE_LOW);
     gate_off();
     pio_sm_config config = cs_open_drain_program_get_default_config(pio_offset);
@@ -132,7 +112,6 @@ int main(void) {
     uint used = 0;
     bool overflow = false;
     for (;;) {
-        poll_power();
         int ch = getchar_timeout_us(0);
         if (ch == '\r') continue;
         if (ch == '\n') {

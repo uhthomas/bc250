@@ -1,0 +1,183 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1230" viewBox="0 0 1200 1230" role="img" aria-labelledby="title desc">
+<title id="title">Physical pin locations for the BC250 Pico 2 six-wire MISO connection</title>
+<desc id="desc">Top view of the full Pico 2 forty-pin header with USB at the top, and J4004 with its white triangle below VCC. Keep Pico physical pin 4 GP2 to J4004 CS, Pico pin 8 GND to J4004 GND, and the lifted BIOS flash pin 1 socket to Pico pin 10 GP7. J4004 SCLK connects to Pico pin 5 GP3, MOSI to Pico pin 6 GP4, and MISO to Pico pin 7 GP5. J4004 VCC and Pico GP26 pin 31 stay unconnected. The existing flash pull-up remains. Remove Pi SPI GPIO wires, leaving Pi USB only.</desc>
+<style>text{font-family:system-ui,sans-serif;fill:#172a37}.title{font-size:30px;font-weight:750}.head{font-size:23px;font-weight:700}.body{font-size:18px}.small{font-size:15px}.tiny{font-size:13px}.pin{font-size:13px;font-weight:750;text-anchor:middle;dominant-baseline:central}.row{font-size:19px;font-weight:650}.muted{fill:#526676}</style>
+<rect width="1200" height="1230" fill="#f7fafc"/>
+<text x="34" y="48" class="title">Pico 2 + BC250 J4004 — 6-wire MISO connection</text>
+<text x="34" y="80" class="body">Look at the component side of the Pico, USB socket at the top. Numbers are physical header pins.</text>
+<rect x="30" y="102" width="1140" height="60" rx="10" fill="#fff1cd" stroke="#c89425" stroke-width="2"/>
+<text x="48" y="128" class="head">BC250 PSU and Pico USB OFF while moving wires. Remove all Pi SPI GPIO jumpers.</text>
+<text x="48" y="151" class="small">The Pi connects to the Pico by USB only; no Pi header pins connect to this circuit.</text>
+<rect x="30" y="180" width="515" height="560" rx="12" fill="#eaf2fb" stroke="#739abb" stroke-width="2"/>
+<text x="50" y="213" class="head">Pico 2 — top view</text>
+<rect x="250" y="226" width="90" height="44" rx="8" fill="#c1cbd3" stroke="#52616e" stroke-width="2"/>
+<text x="295" y="255" class="body" text-anchor="middle">USB ↑</text>
+<rect x="230" y="270" width="130" height="455" rx="17" fill="#438a68" stroke="#245b42" stroke-width="3"/>
+<text x="295" y="308" class="head" text-anchor="middle">PICO 2</text>
+<text x="295" y="333" class="small" text-anchor="middle">component side</text>
+<text x="55" y="277" class="small">LEFT: 1 → 20</text>
+<text x="390" y="277" class="small">RIGHT: 40 → 21</text>
+<circle cx="205" cy="289" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="289" class="pin" text-anchor="middle">1</text>
+<circle cx="385" cy="289" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="289" class="pin" text-anchor="middle">40</text>
+<circle cx="205" cy="311" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="311" class="pin" text-anchor="middle">2</text>
+<circle cx="385" cy="311" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="311" class="pin" text-anchor="middle">39</text>
+<circle cx="205" cy="333" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="333" class="pin" text-anchor="middle">3</text>
+<circle cx="385" cy="333" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="333" class="pin" text-anchor="middle">38</text>
+<circle cx="205" cy="355" r="11" fill="#5ba6e6" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="355" class="pin" text-anchor="middle">4</text>
+<circle cx="385" cy="355" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="355" class="pin" text-anchor="middle">37</text>
+<circle cx="205" cy="377" r="11" fill="#ed9647" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="377" class="pin" text-anchor="middle">5</text>
+<circle cx="385" cy="377" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="377" class="pin" text-anchor="middle">36</text>
+<circle cx="205" cy="399" r="11" fill="#bd8ad8" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="399" class="pin" text-anchor="middle">6</text>
+<circle cx="385" cy="399" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="399" class="pin" text-anchor="middle">35</text>
+<circle cx="205" cy="421" r="11" fill="#7ec9c3" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="421" class="pin" text-anchor="middle">7</text>
+<circle cx="385" cy="421" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="421" class="pin" text-anchor="middle">34</text>
+<circle cx="205" cy="443" r="11" fill="#aebbc4" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="443" class="pin" text-anchor="middle">8</text>
+<circle cx="385" cy="443" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="443" class="pin" text-anchor="middle">33</text>
+<circle cx="205" cy="465" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="465" class="pin" text-anchor="middle">9</text>
+<circle cx="385" cy="465" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="465" class="pin" text-anchor="middle">32</text>
+<circle cx="205" cy="487" r="11" fill="#f5d451" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="487" class="pin" text-anchor="middle">10</text>
+<circle cx="385" cy="487" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="487" class="pin" text-anchor="middle">31</text>
+<circle cx="205" cy="509" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="509" class="pin" text-anchor="middle">11</text>
+<circle cx="385" cy="509" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="509" class="pin" text-anchor="middle">30</text>
+<circle cx="205" cy="531" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="531" class="pin" text-anchor="middle">12</text>
+<circle cx="385" cy="531" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="531" class="pin" text-anchor="middle">29</text>
+<circle cx="205" cy="553" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="553" class="pin" text-anchor="middle">13</text>
+<circle cx="385" cy="553" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="553" class="pin" text-anchor="middle">28</text>
+<circle cx="205" cy="575" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="575" class="pin" text-anchor="middle">14</text>
+<circle cx="385" cy="575" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="575" class="pin" text-anchor="middle">27</text>
+<circle cx="205" cy="597" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="597" class="pin" text-anchor="middle">15</text>
+<circle cx="385" cy="597" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="597" class="pin" text-anchor="middle">26</text>
+<circle cx="205" cy="619" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="619" class="pin" text-anchor="middle">16</text>
+<circle cx="385" cy="619" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="619" class="pin" text-anchor="middle">25</text>
+<circle cx="205" cy="641" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="641" class="pin" text-anchor="middle">17</text>
+<circle cx="385" cy="641" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="641" class="pin" text-anchor="middle">24</text>
+<circle cx="205" cy="663" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="663" class="pin" text-anchor="middle">18</text>
+<circle cx="385" cy="663" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="663" class="pin" text-anchor="middle">23</text>
+<circle cx="205" cy="685" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="685" class="pin" text-anchor="middle">19</text>
+<circle cx="385" cy="685" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="685" class="pin" text-anchor="middle">22</text>
+<circle cx="205" cy="707" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="205" y="707" class="pin" text-anchor="middle">20</text>
+<circle cx="385" cy="707" r="11" fill="#e7edf1" stroke="#405565" stroke-width="1.5"/>
+<text x="385" y="707" class="pin" text-anchor="middle">21</text>
+<text x="55" y="360" class="small">GP2 · J4004 CS#</text>
+<text x="55" y="382" class="small">GP3 · J4004 SCLK</text>
+<text x="55" y="404" class="small">GP4 · J4004 MOSI</text>
+<text x="55" y="426" class="small">GP5 · J4004 MISO</text>
+<text x="55" y="448" class="small">GND · J4004 GND</text>
+<text x="55" y="492" class="small">GP7 · flash socket</text>
+<text x="421" y="492" class="small">GP26 · no wire</text>
+<text x="50" y="734" class="small">Keep existing pins 4, 5, 6, 8, 10; add only pin 7 / GP5.</text>
+<rect x="570" y="180" width="600" height="560" rx="12" fill="#e8f5e9" stroke="#6a9b70" stroke-width="2"/>
+<text x="590" y="213" class="head">BC250 J4004 — top view</text>
+<text x="590" y="244" class="body">Rotate your view until the white triangle is BELOW VCC.</text>
+<rect x="594" y="300" width="112" height="95" rx="8" fill="#aebbc4" stroke="#657784" stroke-width="2"/>
+<text x="650" y="339" class="head" text-anchor="middle">GND</text>
+<text x="650" y="370" class="small" text-anchor="middle">Pico pin 8</text>
+<rect x="726" y="300" width="112" height="95" rx="8" fill="#ed9647" stroke="#657784" stroke-width="2"/>
+<text x="782" y="339" class="head" text-anchor="middle">SCLK</text>
+<text x="782" y="370" class="small" text-anchor="middle">Pico pin 5</text>
+<rect x="858" y="300" width="112" height="95" rx="8" fill="#bd8ad8" stroke="#657784" stroke-width="2"/>
+<text x="914" y="339" class="head" text-anchor="middle">MOSI</text>
+<text x="914" y="370" class="small" text-anchor="middle">Pico pin 6</text>
+<rect x="990" y="300" width="112" height="95" rx="8" fill="#edf1f4" stroke="#657784" stroke-width="2"/>
+<text x="1046" y="339" class="head" text-anchor="middle">unused</text>
+<text x="1046" y="370" class="small" text-anchor="middle">no wire</text>
+<rect x="594" y="419" width="112" height="95" rx="8" fill="#edf1f4" stroke="#657784" stroke-width="2"/>
+<text x="650" y="458" class="head" text-anchor="middle">VCC</text>
+<text x="650" y="489" class="small" text-anchor="middle">no wire</text>
+<rect x="726" y="419" width="112" height="95" rx="8" fill="#5ba6e6" stroke="#657784" stroke-width="2"/>
+<text x="782" y="458" class="head" text-anchor="middle">CS#</text>
+<text x="782" y="489" class="small" text-anchor="middle">Pico pin 4</text>
+<rect x="858" y="419" width="112" height="95" rx="8" fill="#7ec9c3" stroke="#657784" stroke-width="2"/>
+<text x="914" y="458" class="head" text-anchor="middle">MISO</text>
+<text x="914" y="489" class="small" text-anchor="middle">Pico pin 7</text>
+<rect x="990" y="419" width="112" height="95" rx="8" fill="#edf1f4" stroke="#657784" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="1046" y="458" class="head" text-anchor="middle">absent</text>
+<text x="1046" y="489" class="small" text-anchor="middle">no wire</text>
+<path d="M637 541 L650 519 L663 541 Z" fill="white" stroke="#657784" stroke-width="2"/>
+<text x="675" y="538" class="body">white PCB triangle</text>
+<rect x="592" y="572" width="550" height="128" rx="9" fill="#fff9e6" stroke="#c49a35" stroke-width="2"/>
+<text x="610" y="605" class="head">BIOS flash lifted pin 1</text>
+<text x="610" y="636" class="body">Existing yellow wire + female socket</text>
+<text x="610" y="668" class="body">Socket stays on Pico pin 10 / GP7</text>
+<text x="590" y="725" class="small">Add MISO only to Pico GP5 / physical pin 7. Leave VCC empty.</text>
+<rect x="30" y="762" width="1140" height="420" rx="12" fill="#fff" stroke="#b8c7d2" stroke-width="2"/>
+<text x="50" y="797" class="head">Keep five wires; add one direct MISO wire</text>
+<rect x="48" y="807" width="1104" height="43" rx="5" fill="#5ba6e6" opacity="0.19"/>
+<circle cx="75" cy="828" r="16" fill="#5ba6e6"/>
+<text x="75" y="828" class="pin" text-anchor="middle">1</text>
+<text x="108" y="834" class="row">Pico physical 4 / GP2</text>
+<text x="570" y="834" class="row">→</text>
+<text x="608" y="834" class="row">J4004 CS#  (bottom row, second pin)</text>
+<rect x="48" y="856" width="1104" height="43" rx="5" fill="#aebbc4" opacity="0.19"/>
+<circle cx="75" cy="877" r="16" fill="#aebbc4"/>
+<text x="75" y="877" class="pin" text-anchor="middle">2</text>
+<text x="108" y="883" class="row">Pico physical 8 / GND</text>
+<text x="570" y="883" class="row">→</text>
+<text x="608" y="883" class="row">J4004 GND  (top row, first pin)</text>
+<rect x="48" y="905" width="1104" height="43" rx="5" fill="#f5d451" opacity="0.19"/>
+<circle cx="75" cy="926" r="16" fill="#f5d451"/>
+<text x="75" y="926" class="pin" text-anchor="middle">3</text>
+<text x="108" y="932" class="row">Lifted flash pin 1 female socket</text>
+<text x="570" y="932" class="row">→</text>
+<text x="608" y="932" class="row">Pico physical 10 / GP7</text>
+<rect x="48" y="954" width="1104" height="43" rx="5" fill="#ed9647" opacity="0.19"/>
+<circle cx="75" cy="975" r="16" fill="#ed9647"/>
+<text x="75" y="975" class="pin" text-anchor="middle">4</text>
+<text x="108" y="981" class="row">Pico physical 5 / GP3</text>
+<text x="570" y="981" class="row">→</text>
+<text x="608" y="981" class="row">J4004 SCLK  (top row, second pin)</text>
+<rect x="48" y="1003" width="1104" height="43" rx="5" fill="#bd8ad8" opacity="0.19"/>
+<circle cx="75" cy="1024" r="16" fill="#bd8ad8"/>
+<text x="75" y="1024" class="pin" text-anchor="middle">5</text>
+<text x="108" y="1030" class="row">Pico physical 6 / GP4</text>
+<text x="570" y="1030" class="row">→</text>
+<text x="608" y="1030" class="row">J4004 MOSI  (top row, third pin)</text>
+<rect x="48" y="1052" width="1104" height="43" rx="5" fill="#7ec9c3" opacity="0.25"/>
+<circle cx="75" cy="1073" r="16" fill="#7ec9c3"/>
+<text x="75" y="1073" class="pin" text-anchor="middle">6</text>
+<text x="108" y="1079" class="row">Pico physical 7 / GP5</text>
+<text x="570" y="1079" class="row">→</text>
+<text x="608" y="1079" class="row">J4004 MISO  (bottom row, third pin)</text>
+<rect x="48" y="1101" width="1104" height="43" rx="5" fill="#e7edf1"/>
+<text x="108" y="1128" class="row">NO WIRE: J4004 VCC, Pico pin 31 / GP26, Pi GPIO</text>
+<text x="32" y="1211" class="small">Existing 10 kΩ pull-up remains between flash pin 1 and flash pin 8 VCC. No direct VCC-to-Pico 3V3 wire.</text>
+</svg>

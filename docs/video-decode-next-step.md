@@ -1,5 +1,52 @@
 # Next hardware-decode investigation step
 
+**Update 2026-09-27, driver-startup trials:** A RAM-only signer and VCN-key
+interposer booted the BC250 with a no-op PSP-driver wrapper; the same early,
+deliberately tampered type-13 VCN request returned `0x80000029`. A second
+boot changed only the driver's 56-byte video metadata initialization. That
+request returned `0xffff3072`, the expected signature-rejection path, with
+no MMHUB page fault in the diagnostic log. The Pico verified all 626 changed
+SPI replies across two passes with no reported timing or routing fault. This
+isolates missing PSP video metadata as an earlier barrier than firmware
+signature verification. On the next metadata-only boot, the same guarded
+type-13 request with **intact** `navi10_vcn.bin` returned PSP status `0x0`
+and firmware address `0xf41f800000`, the TMR base. The runner restored the
+temporary clock controls and left the GPU unbound. Firmware acceptance is
+now established; register access, VCN ring startup and decoded frames remain
+unverified. Trials leave the BC250 on the diagnostic path, with no desktop
+restore or BIOS flash write.
+
+The first opt-in VCN 2.0.3 module kept PSP firmware loading but failed its
+graphics KIQ test (`-110`) under metadata-only firmware. A control boot using
+the same module, clock sequence and Pico profile with VCN registration off
+bound successfully and created a render node. The RAM-only profile that also
+allocates a separate 1-MiB video TMR then booted cleanly: the intact PSP
+request returned address `0xf41fa00000`, exactly 2 MiB above the TMR base.
+With this profile, graphics KIQ passed and the opt-in driver reached VCN
+initialization, but `mmUVD_PGFSM_STATUS` read `0xfffff` under its mask and the
+VCN decode ring timed out (`-110`). The remaining barrier is register access,
+power/reset state or a related VCN initialization prerequisite; no decoded
+frame has been produced.
+
+**Update 2026-09-27:** The [Pico 2 interposer trial](pico2-type51-vcn-trial.md)
+has now booted Fedora with the authentic VCN2 usage-6 key substituted only
+for the type-51 copy read. A live PSP control confirmed key recognition. The
+unmodified VCN firmware load still returns `0x80000029`, the VCN registers
+remain inaccessible, and the stock amdgpu driver registers no VCN block.
+Changing one byte of the signed firmware body on a separate guarded boot
+produced the same PSP status. An RLC control on the same PSP ring returned
+the expected signature rejection, while VCN still returned `0x80000029`.
+The VCN response also persists before graphics firmware loading. Early VCN
+requests coincided with an MMHUB fault outside the reported VRAM and GART
+ranges, including when firmware staging itself was in VRAM. A full log from an
+earlier late VCN request shows the same `0x80000029` status with **no MMHUB
+fault**, so that fault is not a required cause of the status. The missing
+VCN-specific PSP initialization/TMR state is the more useful boundary.
+A RAM-only signer-only control subsequently booted Fedora with 416/416
+substituted words verified, establishing a path to re-signing a driver trial.
+Hardware video decoding is not working. The capture and equipment plan below
+is earlier background.
+
 2026-09-25. [Positive Technologies demonstrated a working active SPI
 interposer on a BC250](https://habr.com/ru/companies/pt/articles/979470/): it
 substituted a PSP key during one read and supplied the original during the
@@ -9,7 +56,8 @@ firmware payload when its usage-6 key occupies one runtime database slot. This
 is the most concrete route to try. A private clean/patched image pair is
 prepared for a future **isolated external-flash interposer**; the patched image
 is invalid as a standalone BIOS and must never be written to the on-board
-EEPROM. No physical interposer is ready, and no hardware frame has been decoded.
+EEPROM. No physical interposer was ready at that stage, and no hardware frame
+had been decoded.
 
 Update 2026-09-26: two Pico input-only reboot traces now show about 33.27 MHz
 SPI and the same 2,133 complete reads matching the working BIOS. The Pico is

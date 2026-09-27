@@ -188,7 +188,7 @@ class SM:
         elif op == 2:
             if arg != 0 or value != 1:
                 raise AssertionError('only IN PINS,1 modeled')
-            self.isr = ((self.isr << 1) | ((pins >> 4) & 1)) & 0xffffffff
+            self.isr = ((self.isr << 1) | ((pins >> self.in_base) & 1)) & 0xffffffff
             if self.in_autopush:
                 self.in_bits += 1
                 if self.in_bits == 32:
@@ -208,6 +208,9 @@ class SM:
             if (ins & 0xe0ff) == 0x8020:
                 self.rx.append(self.isr)
                 self.isr = 0
+            elif (ins & 0xe0ff) == 0x8080:
+                # PULL NOBLOCK copies X into OSR when the TX FIFO is empty.
+                self.osr = self.fifo.popleft() if self.fifo else self.x
             else:
                 if (ins & 0xe0ff) != 0x80a0:
                     raise AssertionError('only PUSH/PULL BLOCK modeled')

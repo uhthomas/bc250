@@ -6656,3 +6656,126 @@ The user confirmed none of the five passive wires were moved. Cycled the
 authorized APC outlet and confirmed the BC250 returned over root SSH with the
 Fedora bootc kernel and schedutil governor. Pi remains up; Pico still runs
 passive v0.3, not the staged RAM-only bench image.
+
+
+2026-09-27 11:50 UTC: VCN signed-byte control under Pico key swap
+------------------------------------------------------------------
+The Pico SRAM-only type51-vcn-copy image supplied the authentic usage-6 key on
+one guarded Fedora boot. Its serial status verified 138/138 changed replies,
+two complete SPI passes, zero mismatches, faults, stalls or late decisions.
+The isolated Fedora boot consumed its one-time flag. A default-off diagnostic
+amdgpu module submitted one `navi10_vcn.bin` type-13 PSP request after flipping
+the last byte of the signed body in a kernel-memory copy (0x6147f), leaving
+the header, key ID and signature untouched. The PSP returned 0x80000029 with
+fw_addr=0, exactly as for the earlier intact firmware request. The runner
+restored its SMU clock/power controls and exited successfully. This result
+does not place the failure after signature verification: the status can occur
+earlier or mask a later error. The native offline authentication model's
+expected 0xffff3072 for this mutation relies on modeled hardware/OS services.
+The module and raw logs are private under ignored output/; no BC250 BIOS or
+Pico flash was written. The user subsequently asked us to stop spending time
+restoring after each experiment. The current board happened to have been
+returned to normal Fedora before that instruction; future diagnostic boots
+should remain live between tests unless recovery requires a switch.
+
+2026-09-27: continued in-place PSP/VCN diagnostics without normal restoration
+--------------------------------------------------------------------------
+Kept the BC250 in isolated Fedora diagnostic boots and left the Pico 2 in
+SRAM-only type51-vcn-copy active mode. No BC250 BIOS or Pico flash writes. The
+Pico completed ten full SPI passes with 690 changed replies verified, zero
+faults, mismatches, stalls or late decisions. Temporary one-time GRUB entries
+were removed after each boot; /boot is read-only.
+
+A same-boot RLC-versus-VCN signed-byte control returned PSP status 0xffff3072
+for invalid RLC type 8 and 0x80000029 for invalid VCN type 13. The common PSP
+ring can report signature rejection; the VCN path diverges. A type-19 request
+using the tampered VCN payload timed out, so no second request was sent on that
+boot. The ring was cleared with a diagnostic reboot, not a desktop restore.
+
+Built a default-off early type-13 probe from pinned Fedora 7.2.5 source. It
+runs just after psp_hw_start/TMR setup, before graphics firmware loading,
+with an in-memory signed-byte-tampered navi10_vcn.bin payload. Three guarded
+early boots returned transport 0, PSP status 0x80000029 and fw_addr 0. Both
+ordinary GTT and debug_mask=8 VRAM firmware staging were tried. The VRAM trial
+logged firmware buffer 0xf41fd00000, command 0xf4007ed000, fence
+0xf4007ee000 and TMR 0xf41f400000 within VRAM 0xf400000000..0xf41fffffff;
+an MMHUB VMID-0 write fault at 0xf4cec2e000 was outside this VRAM range and
+GART 0..0x1fffffff. Prior early trials also coincided with MMHUB faults at
+other outside-range addresses. The fault is temporally associated, not yet
+causally identified. The early hook deliberately aborts GPU probing, which
+causes amdgpu cleanup IRQ warnings; the board remains SSH-reachable and GPU
+unbound. SMU clock controls were returned to baseline after completed PSP
+responses. Current boot ID e690b42c-51f2-4e0d-9c8f-89a1e7ce2764 remains
+diagnostic, with amdgpu module loaded/unbound and no normal desktop restore.
+
+Tracked generators/runners are in tools/vcn-psp-diagnostics; built modules and
+raw evidence are ignored under output/video-decode-20260922/kernel-build and
+output/pico2/type51-live-20260927. The original kernel source hash is still
+7710ae058d9dbcbee8dfef2273c825565e284cbd8ed39d125f7ef5f1a42624f4.
+No VCN decode block, accessible VCN MMIO or hardware decoded frame yet.
+
+2026-09-27 13:13 UTC: signer boot and RAM-only VCN driver startup candidates
+-------------------------------------------------------------------------
+Recovered the complete earlier late VCN load kernel log: its type-13 request
+returned 0x80000029 without any MMHUB page fault. The MMHUB fault observed on
+early requests is not a necessary cause of that status. Re-ran the native AMD
+video-initializer and destination-boundary suites (17 and 24 cases), which
+continue to point to missing BC250 video state and TMR setup; they do not
+prove silicon behavior.
+
+Booted a signer-only Pico SRAM profile with type-50 modulus substitution and
+fresh TOS/driver signatures, leaving both signed bodies byte-identical to the
+working ROM. Fedora reached SSH on diagnostic boot
+9b2bf3de-7107-4ab9-8257-b49ff8861de5. The Pico completed two full SPI
+passes and verified 416/416 changed replies with zero mismatches, PIO faults,
+stalls or late decisions. The one-time GRUB entry was consumed and removed;
+no desktop restore was done.
+
+Prepared two combined signer, VCN-key and PSP-driver startup profiles. Both
+call the original PSP-driver initializer through a new Thumb wrapper. The
+no-op control has no added memory effect; the metadata variant zeros the
+56-byte video cache and sets the three Cezanne reference ports. Six native
+startup cases pass, including clean/no-op equality beyond copied driver code.
+The generated driver digest and both replacement RSA-PSS signatures verify;
+profiles have 273/283 changed words and expect 293/313 replies per boot pass.
+The ROM views are interposer inputs only, invalid as standalone BIOS images.
+
+The first no-op Pico v01 UF2 verified into SRAM but failed to enumerate USB;
+the BC250 remained off and was not subjected to that driver trial. Pi sudo
+requires a password other than the supplied default, so remote USB power
+cycling was not available. Asked the user to unplug/reconnect only the Pico
+USB cable. Built and staged v02 UF2s with an early watchdog for future
+pre-arm USB startup failures. Board BIOS and Pico flash received zero writes.
+VCN decode remains unavailable.
+
+2026-09-27 13:43 UTC: PSP accepts intact VCN firmware with video metadata
+---------------------------------------------------------------------
+Recovered the Pico after a non-enumerating v01 RAM image by briefly cycling
+Pi 5 USB VBUS on GPIO42; the Pico returned to its installed passive flash
+image without touching its flash or the BC250 BIOS. The v02 RAM loader now
+loads and arms in one Pi invocation before its 15-second pre-arm watchdog.
+
+Booted no-op and metadata-only PSP-driver wrapper profiles, each with the
+signer and authentic usage-6 VCN key. The no-op control completed two SPI
+passes, verified 586/586 changed replies with zero Pico faults, and returned
+PSP 0x80000029 for an early signed-byte-tampered VCN request. Metadata-only
+completed two passes, verified 626/626 replies with zero faults, and the
+same tampered request returned 0xffff3072, the signature-rejection path, with
+no MMHUB fault. Clock controls were restored after both completed requests.
+
+A third cold diagnostic boot kept the metadata-only Pico profile. Its
+intact navi10_vcn.bin type-13 PSP request returned ret=0, status=0x0 and
+firmware address 0xf41f800000, the reported 4-MiB TMR base. The Pico
+completed another two passes and verified all 1252/1252 accumulated changed
+replies with no faults. The kernel hook deliberately stopped after this
+request, leaving the GPU unbound, and the runner restored clock controls.
+Raw boot/PSP/Pico evidence is in ignored output/pico2/type51-live-20260927/
+driver-{noop,metadata,metadata-intact}/. No BIOS or Pico flash write occurred;
+the desktop was not restored between trials.
+
+Prepared a default-off BC250 VCN 2.0.3 module that uses the normal PSP
+firmware path and an isolated diagnostic runner. The prior experimental
+module used direct loading and would not exercise the PSP path that just
+succeeded. A fresh one-time diagnostic boot is staged for the VCN driver
+trial. No accessible VCN registers, running ring or hardware-decoded frame
+has yet been demonstrated.

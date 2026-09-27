@@ -1,0 +1,48 @@
+; Experimental default-PASS, sparse-PATCH selector. Original flash CS# GP7
+; is open-drain: output latch forced LOW, PINDIRS=1 sinks, 0 releases.
+; Empty TX FIFO means PASS (PULL NOBLOCK copies X=0 to OSR). For PATCH,
+; core1 queues route=1, full READ03 command, and one response word before
+; the next host transaction. MISO stays high-Z until the command matches.
+; A mismatch executes IRQ WAIT: the SM stalls with flash deselected and MISO
+; high-Z until fault-handling code stops it. This is an OFFLINE candidate.
+.program sparse_select_od
+.side_set 1 opt pindirs
+.wrap_target
+start:
+    set pindirs, 0 side 0
+    set x, 0
+    pull noblock
+    mov y, osr
+    jmp !y pass
+    pull block
+    mov x, osr
+    pull block
+    wait 0 gpio 2
+    set y, 31
+command_bit:
+    wait 1 gpio 3
+    in pins, 1
+    jmp y-- command_fall
+    mov y, isr
+    jmp x!=y fault
+    out pins, 1 side 1
+    set x, 30
+    wait 0 gpio 3
+data_bit:
+    wait 1 gpio 3
+    wait 0 gpio 3
+    out pins, 1 side 1
+    jmp x-- data_bit
+    wait 1 gpio 3
+    wait 1 gpio 2 side 1
+    jmp start side 0
+command_fall:
+    wait 0 gpio 3
+    jmp command_bit
+fault:
+    irq wait 0
+pass:
+    wait 0 gpio 2
+    set pindirs, 1 side 0
+    wait 1 gpio 2
+.wrap

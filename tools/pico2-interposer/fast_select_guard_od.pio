@@ -1,0 +1,48 @@
+; Open-drain CS# variant of the isolated guarded selector. The flash CS#
+; output latch must be forced LOW in firmware; SET PINDIRS=0 releases the
+; lifted flash leg to its existing board-powered pull-up, while PINDIRS=1
+; sinks it. GP7 must remain unconnected in all tests until a complete board
+; profile and fault path have been validated. MISO is high-Z until PATCH's
+; full READ03 command matches. PASS still has no in-transaction check.
+.program fast_select_guard_od
+.side_set 1 opt pindirs
+.wrap_target
+start:
+    set pindirs, 0 side 0  ; flash deselected, Pico MISO high-Z on FIFO stall
+    pull block
+    mov y, osr              ; route
+    pull block
+    mov x, osr              ; expected command
+    pull block              ; reply in OSR
+    jmp !y pass
+    wait 0 gpio 2           ; host CS# falls; flash already deselected
+    set y, 31
+command_bit:
+    wait 1 gpio 3
+    in pins, 1             ; MOSI, shift left to form big-endian command
+    jmp y-- command_fall
+    mov y, isr
+    jmp x!=y fault
+    out pins, 1 side 1     ; first reply bit only after full command matches
+    set x, 30
+    wait 0 gpio 3
+data_bit:
+    wait 1 gpio 3
+    out pins, 1 side 1
+    wait 0 gpio 3
+    jmp x-- data_bit
+    wait 1 gpio 3
+    wait 1 gpio 2 side 0
+    jmp start side 0
+command_fall:
+    wait 0 gpio 3
+    jmp command_bit
+fault:
+    irq set 0               ; latched mismatch; no MISO output
+    wait 1 gpio 2
+    jmp fault               ; remain deselected/high-Z until host resets SM
+pass:
+    set pindirs, 1 side 0  ; select original flash before host CS# falls
+    wait 0 gpio 2
+    wait 1 gpio 2
+.wrap

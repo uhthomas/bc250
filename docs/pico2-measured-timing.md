@@ -300,6 +300,28 @@ and run from SRAM, without another Pico flash write. After the bench tests,
 the Pico was rebooted into the passive image, reporting 150 MHz and outputs
 off. The BC250 remained on its working STOCK flash path throughout.
 
+An original-flash-only CS# pass-through diagnostic now has a RAM-only Pico
+image and a [board wiring guide](pico2-cs-pass.md). Its PIO changes GP7's
+output enable only: GP7 is an open-drain-style sink with its output value
+forced low, and the existing 10 kΩ resistor returns the flash CS# leg to the
+flash's own VCC. An explicit USB command arms the output; MISO remains an
+input. At a modeled 200 MHz, the assembled PIO replay of the 16
+shortest-setup and 16 shortest-gap windows from each of four clean BC250
+captures found no missing selects or releases in ten phase/synchronizer cases
+per capture; minimum digital CS# setup was 20 ns and minimum release gap was
+350 ns. These margins exclude pad delay, pull-up RC and wiring. A preliminary
+voltage-gated image loaded from Pico SRAM and stayed disabled without a VCC
+connection; the simpler three-wire v2 image supersedes it. The v2 UF2 was
+verified in Pico SRAM and completed 1,024 isolated Pi SPI transactions at a
+requested 33 MHz, returning to PIO OE=0 after the run. GP7 was unconnected,
+so this checks the program state, not the electrical CS# waveform. The next
+test was a physical pass-through boot. The first attempt after wiring failed
+because USB reconnection restored the persistent passive image, which has
+outputs off. After loading the RAM-only v2 image, arming CS-PASS and cycling
+PDU outlet 8, the BC250 booted Fedora and answered SSH. The Pico reported
+`host_cs=1`, `pio_oe=0` at idle after boot. No BIOS or Pico flash write was
+involved in this physical test.
+
 `fast_reply.pio` is a separate experimental response engine for a **preselected**
 transaction. Its assembled PIO outputs the first MISO bit during the command
 phase, before the BC250 samples data. It passes all ten digital timing cases

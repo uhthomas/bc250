@@ -1,0 +1,11 @@
+; Input-only short PIO/DMA snapshot of GP2..GP7 (CS#, SCLK, MOSI,
+; MISO, unused GP6, isolated flash CS#). Arm during the transaction
+; immediately before the selected READ03 command.
+.program bus_snapshot
+.wrap_target
+    wait 1 gpio 2
+    wait 0 gpio 2
+sample:
+    in pins, 6
+    jmp sample
+.wrap

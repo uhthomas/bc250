@@ -3,14 +3,13 @@
 The Pi 5 at `192.168.0.27` runs the USB flashing, capture and bench tools.
 The prepared kit is `/home/pi/bc250-pico2-20260926`.
 
-**Current state, 2026-09-27:** The Pico is already running the persistent
-input-only `bc250_passive_usb_reset.uf2` image, with outputs off. Its USB
-reset interface was verified with `picotool reboot -f -u`, so future RAM-only
-candidate loads do not need a physical BOOTSEL press. The older instructions
-below record the original capture setup; do not reflash the older
-`bc250_passive.uf2` merely to start another bench run. The guarded GP7
-candidate and its isolated test record are in
-`candidates/select-guard-gp7-v07/`.
+**Current state, 2026-09-27:** The Pico's persistent image is input-only
+`bc250_passive_usb_reset.uf2`, with vendor USB reset. It currently runs a
+RAM-only CS# pass-through diagnostic, with its output cancelled and disabled;
+unplugging USB returns it to the passive image on the next boot. The prepared
+pass-through image and [board wiring](pico2-cs-pass.md) are in
+`candidates/cs-pass-v02/`. The guarded GP7 PATCH candidate remains an
+isolated bench experiment in `candidates/select-guard-gp7-v07/`.
 
 For the first BC250 capture, the connections are:
 

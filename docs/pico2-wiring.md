@@ -4,7 +4,8 @@
 were completed before the BIOS chip's CS# leg was lifted. The lifted leg now
 has a 10 kΩ pull-up to flash pin 8 and a lead ending in a
 female socket on J4004 CS#. The BC250 **boots in STOCK mode** through this
-return path. Leave the plug there while the active Pico firmware is developed.
+return path. A RAM-only original-flash CS# pass-through trial is now prepared;
+use its [current wiring and checks](pico2-cs-pass.md) before moving the plug.
 
 The Pico connects by USB to the **Pi 5**. Use the [Pi quick-start](pico2-pi-start.md)
 for SSH flashing, capture and decoding commands.
@@ -27,11 +28,12 @@ passed Pi functional tests at a requested 33 MHz, but neither is an active
 BC250 image. See the [measurement report](pico2-measured-timing.md) and
 [fast bench guide](pico2-fast-bench.md).
 
-The Pico now has a persistent **input-only passive image with USB reset**.
-The Pi can enter BOOTSEL remotely for later RAM-only experiments. A guarded
-GP7 selector passed isolated Pi tests at a requested 33 MHz, but it has no
-BC250 board profile or board-arm command. The Pico was returned to the
-passive image after those tests.
+The Pico's persistent flash image is **input-only passive with USB reset**.
+The Pi can enter BOOTSEL remotely for RAM-only experiments. A guarded GP7
+selector passed isolated Pi tests at a requested 33 MHz, but it has no
+BC250 board profile or board-arm command. The Pico currently runs the RAM-only
+CS# pass-through diagnostic, cancelled with its output disabled; unplugging
+USB restores the persistent passive image on its next boot.
 
 The following passive setup is retained for repeat measurements. The signing
 key and signed payload are already prepared; no BIOS write is needed for these
@@ -153,11 +155,11 @@ while the meter is set to resistance.
 The BIOS flash's lifted CS# leg is connected by a short, anchored wire and a
 female socket to J4004 CS# for **STOCK**. The user installed the 10 kΩ pull-up
 between lifted pin 1 and flash pin 8 and verified that the BC250 boots with
-the socket on J4004 CS#. Keep this working path in place. The v0.7 guarded
-Pico candidate is still an isolated bench diagnostic; it has no BC250
-board-arm command or complete board profile. Do not move the socket to Pico
-GP7 yet. Move it only
-with the BC250 PSU and Pico USB disconnected when a board-ready trial exists.
+the socket on J4004 CS#. The [CS# pass-through trial](pico2-cs-pass.md) is
+the first board-ready diagnostic. It routes the original flash's CS# through
+GP7 while all firmware bytes still come from the original flash. The v0.7
+guarded PATCH candidate remains isolated-bench-only, without a complete board
+profile. Move the socket only with the BC250 PSU and Pico USB disconnected.
 
 Before handling the socket again, confirm that the thin pin-1 wire is anchored
 to the board so socket movement cannot pull on the lifted chip leg. The
@@ -194,14 +196,16 @@ Pico 3V3. Keep the CS wire and resistor connection short.
 | Mode | Put the lifted-leg socket on | Pico J4004 wires |
 |---|---|---|
 | **STOCK** | J4004 **CS#** male pin | **All removed**, including MISO and GND |
-| **PICO, later** | Pico **GP7 / physical pin 10** | Pico pins 4/5/6/7/8 to J4004 CS#/SCLK/MOSI/MISO/GND |
+| **CS-PASS v2 trial** | Pico **GP7 / physical pin 10** | Pico pin 4 to J4004 CS#, pin 8 to J4004 GND; no others |
+| **PATCH, later** | Pico **GP7 / physical pin 10** | The future patch wiring will add SCLK/MOSI/MISO only after validation |
 
 In PICO mode, J4004 CS# goes to Pico **GP2 / physical pin 4**; the lifted
 flash leg goes separately to Pico **GP7 / physical pin 10**. GP6/pin 9 stays
 unused. There is no J4004 VCC-to-Pico supply jumper. Pico USB goes to the Pi
 5; both devices have their own supply and share only the J4004 ground wire.
-The 10 cm jumpers have not been qualified for active operation at the BC250's
-measured SPI timing.
+The 10 cm jumpers have not yet been qualified on the BC250's active CS# path
+at its measured SPI timing. Use the [current trial guide](pico2-cs-pass.md)
+for the three-wire setup.
 
 Before power, measure at the actual endpoints:
 
@@ -218,7 +222,7 @@ signal wires**. Power the BC250 normally and verify it boots through the
 original flash. To return to STOCK later, power both devices off, move the
 plug back to J4004 CS#, and remove all Pico signal wires. The movable plug
 isolates only flash CS#; it does not disconnect a Pico that drives MISO.
-An active PICO boot requires its own measured timing and fault validation.
+An active PATCH boot requires its own measured timing and fault validation.
 
 ## References
 

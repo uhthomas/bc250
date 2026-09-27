@@ -122,8 +122,7 @@ pico_set_program_version(bc250_fast_select_guard_bench "0.7-gp7")
 pico_add_extra_outputs(bc250_fast_select_guard_bench)
 
 # RAM-only, original-flash CS# pass-through diagnostic. GP7 only sinks CS#;
-# it never drives the board's 3.3 V rail. GP26 senses board VCC through a
-# 10k/10k divider so an unwired sense pin stays low.
+# the already-installed flash pull-up releases it to the board's 3.3 V rail.
 add_executable(bc250_cs_pass cs_pass.c)
 pico_set_binary_type(bc250_cs_pass no_flash)
 pico_generate_pio_header(bc250_cs_pass ${CMAKE_CURRENT_LIST_DIR}/cs_open_drain.pio)
@@ -132,12 +131,218 @@ target_compile_definitions(bc250_cs_pass PRIVATE
   PICO_STDIO_ENABLE_CRLF_SUPPORT=0
   PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
   PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
-target_link_libraries(bc250_cs_pass pico_stdlib hardware_pio hardware_clocks hardware_vreg hardware_adc)
+target_link_libraries(bc250_cs_pass pico_stdlib hardware_pio hardware_clocks hardware_vreg)
 pico_enable_stdio_usb(bc250_cs_pass 1)
 pico_enable_stdio_uart(bc250_cs_pass 0)
 pico_set_program_name(bc250_cs_pass "BC250 original-flash CS pass-through diagnostic")
-pico_set_program_version(bc250_cs_pass "0.1-ram")
+pico_set_program_version(bc250_cs_pass "0.2-ram")
 pico_add_extra_outputs(bc250_cs_pass)
+
+# RAM-only CS pass-through plus filtered command/predecessor capture for
+# deriving a real BC250 boot profile. Adds input-only GP3/GP4 wires; MISO
+# remains an input. Build and model locally before any board connection.
+add_executable(bc250_cs_pass_hunt cs_pass_hunt.c)
+pico_set_binary_type(bc250_cs_pass_hunt no_flash)
+pico_generate_pio_header(bc250_cs_pass_hunt ${CMAKE_CURRENT_LIST_DIR}/cs_open_drain.pio)
+pico_generate_pio_header(bc250_cs_pass_hunt ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+target_compile_options(bc250_cs_pass_hunt PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(bc250_cs_pass_hunt PRIVATE
+  PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+  PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+  PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
+target_link_libraries(bc250_cs_pass_hunt pico_stdlib pico_multicore hardware_pio hardware_clocks hardware_vreg)
+pico_enable_stdio_usb(bc250_cs_pass_hunt 1)
+pico_enable_stdio_uart(bc250_cs_pass_hunt 0)
+pico_set_program_name(bc250_cs_pass_hunt "BC250 CS pass-through address context hunt")
+pico_set_program_version(bc250_cs_pass_hunt "0.1-ram")
+pico_add_extra_outputs(bc250_cs_pass_hunt)
+
+# RAM-only full-command stream with the same board-proven CS# relay. USB
+# transfer and command capture are diagnostic only; no MISO/BIOS writes.
+add_executable(bc250_cs_pass_stream cs_pass_stream.c)
+pico_set_binary_type(bc250_cs_pass_stream no_flash)
+pico_generate_pio_header(bc250_cs_pass_stream ${CMAKE_CURRENT_LIST_DIR}/cs_open_drain.pio)
+pico_generate_pio_header(bc250_cs_pass_stream ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+target_compile_options(bc250_cs_pass_stream PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(bc250_cs_pass_stream PRIVATE
+  PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+  PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+  PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
+target_link_libraries(bc250_cs_pass_stream pico_stdlib pico_multicore hardware_pio hardware_clocks hardware_vreg)
+pico_enable_stdio_usb(bc250_cs_pass_stream 1)
+pico_enable_stdio_uart(bc250_cs_pass_stream 0)
+pico_set_program_name(bc250_cs_pass_stream "BC250 CS pass-through RLE command stream")
+pico_set_program_version(bc250_cs_pass_stream "0.2-ram")
+pico_add_extra_outputs(bc250_cs_pass_stream)
+
+set(BC250_SPARSE_PROFILE_HEADER "" CACHE FILEPATH
+  "Verified physical sparse profile header under private output/; enables dry-run target")
+if(BC250_SPARSE_PROFILE_HEADER)
+  if(NOT EXISTS "${BC250_SPARSE_PROFILE_HEADER}")
+    message(FATAL_ERROR "BC250_SPARSE_PROFILE_HEADER does not exist")
+  endif()
+  get_filename_component(BC250_SPARSE_PROFILE_DIR "${BC250_SPARSE_PROFILE_HEADER}" DIRECTORY)
+  add_executable(bc250_sparse_dryrun sparse_dryrun.c)
+  pico_set_binary_type(bc250_sparse_dryrun no_flash)
+  pico_generate_pio_header(bc250_sparse_dryrun ${CMAKE_CURRENT_LIST_DIR}/sparse_select_od.pio)
+  pico_generate_pio_header(bc250_sparse_dryrun ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+  target_compile_options(bc250_sparse_dryrun PRIVATE -Wall -Wextra -Werror)
+  target_compile_definitions(bc250_sparse_dryrun PRIVATE
+    PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+    PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+    PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
+  target_include_directories(bc250_sparse_dryrun PRIVATE "${BC250_SPARSE_PROFILE_DIR}")
+  target_link_libraries(bc250_sparse_dryrun pico_stdlib pico_multicore hardware_pio hardware_clocks hardware_vreg)
+  pico_enable_stdio_usb(bc250_sparse_dryrun 1)
+  pico_enable_stdio_uart(bc250_sparse_dryrun 0)
+  pico_set_program_name(bc250_sparse_dryrun "BC250 physical sparse profile dry run")
+  pico_set_program_version(bc250_sparse_dryrun "0.1-ram")
+  pico_add_extra_outputs(bc250_sparse_dryrun)
+
+  add_executable(bc250_sparse_active sparse_active.c)
+  pico_set_binary_type(bc250_sparse_active no_flash)
+  pico_generate_pio_header(bc250_sparse_active ${CMAKE_CURRENT_LIST_DIR}/sparse_select_early.pio)
+  pico_generate_pio_header(bc250_sparse_active ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+  target_compile_options(bc250_sparse_active PRIVATE -Wall -Wextra -Werror)
+  target_compile_definitions(bc250_sparse_active PRIVATE
+    BC250_EARLY_MISO=1
+    BC250_FAST_MISO_PAD=1
+    PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+    PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+    PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
+  target_include_directories(bc250_sparse_active PRIVATE "${BC250_SPARSE_PROFILE_DIR}")
+  target_link_libraries(bc250_sparse_active pico_stdlib pico_multicore hardware_pio hardware_clocks hardware_vreg hardware_watchdog)
+  pico_enable_stdio_usb(bc250_sparse_active 1)
+  pico_enable_stdio_uart(bc250_sparse_active 0)
+  pico_set_program_name(bc250_sparse_active "BC250 sparse guarded PASS/PATCH candidate")
+  pico_set_program_version(bc250_sparse_active "0.1-ram")
+  pico_add_extra_outputs(bc250_sparse_active)
+
+  add_executable(bc250_sparse_probe sparse_active.c)
+  pico_set_binary_type(bc250_sparse_probe no_flash)
+  pico_generate_pio_header(bc250_sparse_probe ${CMAKE_CURRENT_LIST_DIR}/sparse_select_od.pio)
+  pico_generate_pio_header(bc250_sparse_probe ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+  pico_generate_pio_header(bc250_sparse_probe ${CMAKE_CURRENT_LIST_DIR}/miso_probe.pio)
+  target_compile_options(bc250_sparse_probe PRIVATE -Wall -Wextra -Werror)
+  target_compile_definitions(bc250_sparse_probe PRIVATE
+    BC250_FLASH_CS=7
+    BC250_MISO_PROBE=1
+    PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=1)
+  target_include_directories(bc250_sparse_probe PRIVATE "${BC250_SPARSE_PROFILE_DIR}")
+  target_link_libraries(bc250_sparse_probe pico_stdlib pico_multicore hardware_pio hardware_clocks hardware_vreg)
+  pico_enable_stdio_usb(bc250_sparse_probe 1)
+  pico_enable_stdio_uart(bc250_sparse_probe 0)
+  pico_set_program_name(bc250_sparse_probe "BC250 sparse guarded MISO probe")
+  pico_set_program_version(bc250_sparse_probe "0.1-ram")
+  pico_add_extra_outputs(bc250_sparse_probe)
+
+  add_executable(bc250_sparse_early_probe sparse_active.c)
+  pico_set_binary_type(bc250_sparse_early_probe no_flash)
+  pico_generate_pio_header(bc250_sparse_early_probe ${CMAKE_CURRENT_LIST_DIR}/sparse_select_early.pio)
+  pico_generate_pio_header(bc250_sparse_early_probe ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+  pico_generate_pio_header(bc250_sparse_early_probe ${CMAKE_CURRENT_LIST_DIR}/miso_probe.pio)
+  target_compile_options(bc250_sparse_early_probe PRIVATE -Wall -Wextra -Werror)
+  target_compile_definitions(bc250_sparse_early_probe PRIVATE
+    BC250_FLASH_CS=7
+    BC250_MISO_PROBE=1
+    BC250_EARLY_MISO=1
+    PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=1)
+  target_include_directories(bc250_sparse_early_probe PRIVATE "${BC250_SPARSE_PROFILE_DIR}")
+  target_link_libraries(bc250_sparse_early_probe pico_stdlib pico_multicore hardware_pio hardware_clocks hardware_vreg)
+  pico_enable_stdio_usb(bc250_sparse_early_probe 1)
+  pico_enable_stdio_uart(bc250_sparse_early_probe 0)
+  pico_set_program_name(bc250_sparse_early_probe "BC250 early MISO guarded control")
+  pico_set_program_version(bc250_sparse_early_probe "0.1-ram")
+  pico_add_extra_outputs(bc250_sparse_early_probe)
+
+  add_executable(bc250_sparse_fast_early_probe sparse_active.c)
+  pico_set_binary_type(bc250_sparse_fast_early_probe no_flash)
+  pico_generate_pio_header(bc250_sparse_fast_early_probe ${CMAKE_CURRENT_LIST_DIR}/sparse_select_early.pio)
+  pico_generate_pio_header(bc250_sparse_fast_early_probe ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+  pico_generate_pio_header(bc250_sparse_fast_early_probe ${CMAKE_CURRENT_LIST_DIR}/miso_probe.pio)
+  target_compile_options(bc250_sparse_fast_early_probe PRIVATE -Wall -Wextra -Werror)
+  target_compile_definitions(bc250_sparse_fast_early_probe PRIVATE
+    BC250_FLASH_CS=7
+    BC250_MISO_PROBE=1
+    BC250_EARLY_MISO=1
+    BC250_FAST_MISO_PAD=1
+    PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=1)
+  target_include_directories(bc250_sparse_fast_early_probe PRIVATE "${BC250_SPARSE_PROFILE_DIR}")
+  target_link_libraries(bc250_sparse_fast_early_probe pico_stdlib pico_multicore hardware_pio hardware_clocks hardware_vreg)
+  pico_enable_stdio_usb(bc250_sparse_fast_early_probe 1)
+  pico_enable_stdio_uart(bc250_sparse_fast_early_probe 0)
+  pico_set_program_name(bc250_sparse_fast_early_probe "BC250 fast-pad early MISO control")
+  pico_set_program_version(bc250_sparse_fast_early_probe "0.1-ram")
+  pico_add_extra_outputs(bc250_sparse_fast_early_probe)
+
+  add_executable(bc250_sparse_snapshot_probe sparse_active.c)
+  pico_set_binary_type(bc250_sparse_snapshot_probe no_flash)
+  pico_generate_pio_header(bc250_sparse_snapshot_probe ${CMAKE_CURRENT_LIST_DIR}/sparse_select_early.pio)
+  pico_generate_pio_header(bc250_sparse_snapshot_probe ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+  pico_generate_pio_header(bc250_sparse_snapshot_probe ${CMAKE_CURRENT_LIST_DIR}/miso_probe.pio)
+  pico_generate_pio_header(bc250_sparse_snapshot_probe ${CMAKE_CURRENT_LIST_DIR}/bus_snapshot.pio)
+  target_compile_options(bc250_sparse_snapshot_probe PRIVATE -Wall -Wextra -Werror)
+  target_compile_definitions(bc250_sparse_snapshot_probe PRIVATE
+    BC250_FLASH_CS=7
+    BC250_MISO_PROBE=1
+    BC250_EARLY_MISO=1
+    BC250_FAST_MISO_PAD=1
+    BC250_BUS_SNAPSHOT=1
+    PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=1)
+  target_include_directories(bc250_sparse_snapshot_probe PRIVATE "${BC250_SPARSE_PROFILE_DIR}")
+  target_link_libraries(bc250_sparse_snapshot_probe pico_stdlib pico_multicore hardware_pio hardware_dma hardware_clocks hardware_vreg)
+  pico_enable_stdio_usb(bc250_sparse_snapshot_probe 1)
+  pico_enable_stdio_uart(bc250_sparse_snapshot_probe 0)
+  pico_set_program_name(bc250_sparse_snapshot_probe "BC250 six-wire SPI snapshot")
+  pico_set_program_version(bc250_sparse_snapshot_probe "0.1-ram")
+  pico_add_extra_outputs(bc250_sparse_snapshot_probe)
+
+  add_executable(bc250_sparse_release_snapshot sparse_active.c)
+  pico_set_binary_type(bc250_sparse_release_snapshot no_flash)
+  pico_generate_pio_header(bc250_sparse_release_snapshot ${CMAKE_CURRENT_LIST_DIR}/sparse_select_early.pio)
+  pico_generate_pio_header(bc250_sparse_release_snapshot ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+  pico_generate_pio_header(bc250_sparse_release_snapshot ${CMAKE_CURRENT_LIST_DIR}/miso_probe.pio)
+  pico_generate_pio_header(bc250_sparse_release_snapshot ${CMAKE_CURRENT_LIST_DIR}/bus_release_snapshot.pio)
+  target_compile_options(bc250_sparse_release_snapshot PRIVATE -Wall -Wextra -Werror)
+  target_compile_definitions(bc250_sparse_release_snapshot PRIVATE
+    BC250_FLASH_CS=7
+    BC250_MISO_PROBE=1
+    BC250_EARLY_MISO=1
+    BC250_FAST_MISO_PAD=1
+    BC250_BUS_SNAPSHOT=1
+    BC250_RELEASE_SNAPSHOT=1
+    PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=1)
+  target_include_directories(bc250_sparse_release_snapshot PRIVATE "${BC250_SPARSE_PROFILE_DIR}")
+  target_link_libraries(bc250_sparse_release_snapshot pico_stdlib pico_multicore hardware_pio hardware_dma hardware_clocks hardware_vreg)
+  pico_enable_stdio_usb(bc250_sparse_release_snapshot 1)
+  pico_enable_stdio_uart(bc250_sparse_release_snapshot 0)
+  pico_set_program_name(bc250_sparse_release_snapshot "BC250 flash-CS release snapshot")
+  pico_set_program_version(bc250_sparse_release_snapshot "0.1-ram")
+  pico_add_extra_outputs(bc250_sparse_release_snapshot)
+
+  add_executable(bc250_sparse_late_snapshot sparse_active.c)
+  pico_set_binary_type(bc250_sparse_late_snapshot no_flash)
+  pico_generate_pio_header(bc250_sparse_late_snapshot ${CMAKE_CURRENT_LIST_DIR}/sparse_select_early.pio)
+  pico_generate_pio_header(bc250_sparse_late_snapshot ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+  pico_generate_pio_header(bc250_sparse_late_snapshot ${CMAKE_CURRENT_LIST_DIR}/miso_probe.pio)
+  pico_generate_pio_header(bc250_sparse_late_snapshot ${CMAKE_CURRENT_LIST_DIR}/bus_snapshot.pio)
+  target_compile_options(bc250_sparse_late_snapshot PRIVATE -Wall -Wextra -Werror)
+  target_compile_definitions(bc250_sparse_late_snapshot PRIVATE
+    BC250_FLASH_CS=7
+    BC250_MISO_PROBE=1
+    BC250_EARLY_MISO=1
+    BC250_FAST_MISO_PAD=1
+    BC250_BUS_SNAPSHOT=1
+    BC250_SNAPSHOT_COMMAND=0x038fef4c
+    PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=1)
+  target_include_directories(bc250_sparse_late_snapshot PRIVATE "${BC250_SPARSE_PROFILE_DIR}")
+  target_link_libraries(bc250_sparse_late_snapshot pico_stdlib pico_multicore hardware_pio hardware_dma hardware_clocks hardware_vreg)
+  pico_enable_stdio_usb(bc250_sparse_late_snapshot 1)
+  pico_enable_stdio_uart(bc250_sparse_late_snapshot 0)
+  pico_set_program_name(bc250_sparse_late_snapshot "BC250 late VCN SPI snapshot")
+  pico_set_program_version(bc250_sparse_late_snapshot "0.1-ram")
+  pico_add_extra_outputs(bc250_sparse_late_snapshot)
+endif()
 
 option(BC250_BUILD_LEGACY_BENCH "Build the development-only reply experiment" OFF)
 if(BC250_BUILD_LEGACY_BENCH)

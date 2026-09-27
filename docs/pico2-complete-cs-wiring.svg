@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1100" viewBox="0 0 1200 1100" role="img" aria-labelledby="title desc">
 <title id="title">BC250 lifted BIOS CS with a movable connector instead of a switch</title>
-<desc id="desc">With power off, a short strain-relieved wire from the lifted BIOS flash pin 1 CS ends in one female socket. Move this socket to J4004 CS for stock boot, or to Pico 2 GP7 physical pin 10 for later PICO use. A permanent 10 kiloohm resistor connects lifted flash pin 1 to flash pin 8 board VCC. For later PICO use, Pico pins 4, 5, 6, 7 and 8 connect respectively to J4004 CS, SCLK, MOSI, MISO and GND; Pico USB goes to Pi 5. No VCC-to-Pico jumper. GP6 pin 9 unused. First boot in stock mode, with all Pico signal wires removed. Current Pico firmware is isolated-bench-only and cannot boot the BC250 in PICO mode.</desc>
+<desc id="desc">Historical full-patch layout. With power off, a short strain-relieved wire from the lifted BIOS flash pin 1 CS ends in one female socket. Move this socket to J4004 CS for stock boot, or to Pico 2 GP7 physical pin 10 for a Pico trial. A permanent 10 kiloohm resistor connects lifted flash pin 1 to flash pin 8 board VCC. The future full patch wiring would connect Pico pins 4, 5, 6, 7 and 8 to J4004 CS, SCLK, MOSI, MISO and GND. The current CS-PASS v2 trial uses only Pico pins 4, 8 and 10, as shown in pico2-cs-pass-wiring.svg. Pico USB goes to Pi 5; no VCC-to-Pico supply jumper.</desc>
 <style>text{font-family:system-ui,sans-serif;fill:#172a37}.title{font-size:30px;font-weight:750}.head{font-size:22px;font-weight:700}.body{font-size:18px}.small{font-size:15px}.row{font-size:19px;font-weight:650}.pin{font-size:16px;font-weight:750;text-anchor:middle;dominant-baseline:central}.center{text-anchor:middle}.muted{fill:#526676}</style>
 <rect width="1200" height="1100" fill="#f7fafc"/>
 <text x="30" y="49" class="title">BC250 BIOS CS# — one movable plug, no switch</text>
@@ -71,5 +71,5 @@
 <text x="50" y="979" class="body">Plug on J4004 CS#: lifted leg 1 ↔ J4004 CS# must have continuity. Unplug: no direct bridge to old pad.</text>
 <text x="50" y="1008" class="body">Check ~10 kΩ from lifted leg 1 to flash pin 8 VCC; inspect for bridges to pin 2 and nearby pads.</text>
 <text x="50" y="1041" class="row">First boot: plug into J4004 CS# (STOCK), remove all Pico signal wires, power BC250.</text>
-<text x="30" y="1094" class="small muted">Current Pico v0.6 image is an isolated bench test, not a BC250 boot image. Keep the connector short, insulated and strain-relieved.</text>
+<text x="30" y="1094" class="small muted">Historical full-patch layout. Current CS-PASS v2 trial uses only Pico pins 4, 8 and 10; see pico2-cs-pass-wiring.svg.</text>
 </svg>

@@ -1,0 +1,20 @@
+; Input-only one-shot capture of the 32 MISO reply bits in the next
+; 32-command-bit READ03 transaction. Arm during the preceding transaction.
+.program miso_probe
+.wrap_target
+    wait 1 gpio 2
+    wait 0 gpio 2
+    set x, 31
+command_bit:
+    wait 1 gpio 3
+    wait 0 gpio 3
+    jmp x-- command_bit
+    set x, 31
+reply_bit:
+    wait 1 gpio 3
+    in pins, 1
+    wait 0 gpio 3
+    jmp x-- reply_bit
+    push block
+    irq wait 1
+.wrap

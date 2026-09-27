@@ -1,0 +1,10 @@
+; Input-only GP2..GP7 sampling beginning when the preceding host CS# rises.
+; Captures the pull-up edge on the isolated original-flash CS# leg and the
+; ensuing CS-high gap before the selected READ03 transaction.
+.program bus_release_snapshot
+.wrap_target
+    wait 1 gpio 2
+sample:
+    in pins, 6
+    jmp sample
+.wrap

@@ -1,5 +1,23 @@
 # BC250 Pico 2 implementation
 
+**Current board result, 2026-09-27:** The [six-wire Pico 2 connection](../../docs/pico2-six-wire-miso.md)
+boots Fedora through the original BIOS flash in pass-through mode. After
+correcting the selector's MISO edge timing, exact-original active replies
+also booted. The [type-51 key trial](../../docs/pico2-type51-vcn-trial.md)
+injected the authentic VCN2 usage-6 record during the copy read, booted
+Fedora and changed a bounded live PSP authentication control to the predicted
+post-key bounds error. The unmodified VCN firmware request now fails later
+with `0x80000029`; VCN MMIO and hardware decode remain unavailable. The board
+is restored to working pass-through mode, with Pico MISO disabled. No BIOS or
+Pico flash write was made for these trials.
+
+Earlier [five-wire address hunts](../../docs/pico2-cs-pass-hunt.md) yielded
+two matching filtered 1,856-hit sequences. The later
+[RLE full-command capture](../../docs/pico2-full-boot-trace.md) losslessly
+recorded 1,832,116 commands and showed two passes matching through the last
+changed word. These captures generated the sparse profile used by the board
+controls.
+
 Two Pico 2 UF2 images and their host tools are prepared. The passive v0.2 image
 has booted on the physical Pico and passed its full 393,248-byte USB pattern/CRC
 test after correcting the first capture's buffering bug. Two passive reboot
@@ -63,8 +81,8 @@ output enable was on, and the pad input remained high. The GPIO mux and
 override registers were normal. A same-selector GP7/pin-10 comparison is
 built and staged on the Pi at `select-bench-gp7-v05/`. It passed the same
 1,024-read requested-33-MHz run with zero route, idle-pad or PATCH-reply
-errors. That supports moving the eventual flash-CS output to GP7, but the
-current active interceptor still uses GP6 and is not board-ready.
+errors. That supported moving the flash-CS output to GP7; this earlier
+isolated interceptor still used GP6 and was not board-ready.
 An isolated v0.6 GP7 candidate adds a PIO1/DMA capture of each 32-bit SPI
 command for **post-run** comparison with the Pi script. It is staged at
 `select-commands-gp7-v06/`; it cannot reject a wrong command before the
@@ -72,11 +90,12 @@ current transaction drives data, and it has no board-arm command.
 It has now passed the 1,024-read requested-33-MHz isolated run with every
 command, route and PATCH reply correct. An injected one-bit address error was
 reported on the exact row in a separate low-speed negative control. A
-real-time fault path and complete board profile are still missing.
+real-time fault path and complete board profile were still missing at that
+stage.
 All candidates use the same five isolated Pi jumpers
 with **GP6 / Pico pin 9 entirely unconnected**; the GP7 comparison also
 requires **GP7 / Pico pin 10 entirely unconnected**.
-None has an address check or BC250 board-arm command. The
+Those isolated-bench candidates lacked a BC250 board-arm command. The
 [measurement report](../../docs/pico2-measured-timing.md) records the results
 and limits.
 
@@ -87,9 +106,9 @@ and limits.
 | Private `overlay.bin` | Original/patched type-50 database and signed TOS/driver segments | Not a firmware/UF2; board timing/profile not ready |
 
 Pin contract: GP2=host CS#, GP3=SCLK, GP4=MOSI, GP5=MISO. The passive image
-leaves GP6 and GP7 as inputs. The existing experimental interceptor still
-drives GP6 only after `arm-isolated`; its eventual board version must be
-rebuilt for GP7 and qualified before attaching any flash CS#. UART
+leaves GP6 and GP7 as inputs. The older isolated interceptor drives GP6 only
+after `arm-isolated`; the current board selector uses GP7 for the isolated
+flash CS# leg. UART
 stdio is disabled. The passive build forces output enable off on GP2–GP6
 and has no PIO output instructions. Its default clock is the stock 150 MHz.
 
