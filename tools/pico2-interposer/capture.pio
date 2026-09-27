@@ -1,0 +1,18 @@
+; Input only. No SET/OUT pins or output-enable operations.
+; GP2..GP5: CS#, SCLK, MOSI, MISO. Every sample is one four-bit nibble.
+.program raw_capture
+    pull block                  ; number of complete transactions to skip
+    mov x, osr
+    wait 1 gpio 2               ; synchronize to an idle CS#
+check_skip:
+    jmp x-- skip_one
+    jmp start
+skip_one:
+    wait 0 gpio 2
+    wait 1 gpio 2
+    jmp check_skip
+start:
+    wait 0 gpio 2
+.wrap_target
+    in pins, 4                  ; one sample per PIO clock, autopush each 8
+.wrap

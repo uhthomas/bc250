@@ -1,0 +1,62 @@
+; Strict, preloaded command/address script. No CPU on the reply critical path.
+; SINGLE-IO, MODE 0, EXACTLY 64 CLOCKS PER SCRIPTED TRANSACTION ONLY.
+; Profile words: expected command, (JMP patch/pass encoding << 16), reply.
+; Program must load at offset zero: the embedded JMPs are absolute addresses.
+; A mismatch latches IRQ0, leaves MISO high-Z, and never consumes another row.
+; After the final row PULL stalls with MISO disabled; the guard still passes CS.
+.program router
+.origin 0
+.side_set 1 opt pindirs
+.wrap_target
+public next_record:
+    pull block side 0
+    mov y, osr
+    pull block
+public wait_start:
+    wait 0 gpio 2
+    set x, 31
+command_bit:
+    wait 1 gpio 3
+    in pins, 1
+    jmp x-- more_command
+    mov x, isr
+    jmp x != y fault
+    out exec, 16
+public patch:
+    set pins, 1           ; flash CS# high before any Pico MISO drive
+    pull block
+    set x, 31
+    wait 0 gpio 3 [2]     ; at least two complete cycles for flash output release
+data_bit:
+    out pins, 1 side 1
+    wait 1 gpio 3
+    wait 0 gpio 3
+    jmp x-- data_bit
+    jmp done
+public pass:
+    pull block           ; consume the unused reply, original flash stays selected
+public done:
+    wait 1 gpio 2 side 0
+    jmp next_record
+more_command:
+    wait 0 gpio 3
+    jmp command_bit
+public fault:
+    irq wait 0 side 0     ; latch; CPU MUST NOT clear IRQ0 while router is enabled
+.wrap
+
+; SM3 has priority over the router's MISO direction on CS deassertion.
+; It repeats side 0 while host CS# is high, preventing a stalled reply from
+; driving between transactions. IRQ1 tells the dedicated core to check that
+; a scripted transaction ended at a legal instruction. This is not an
+; asynchronous electrical gate: the synchronizer and PIO add latency.
+.program router_guard
+.side_set 1 opt pindirs
+.wrap_target
+high:
+    jmp pin high side 0  ; JMP pin is host CS#, reassert OE=0 every idle cycle
+    set pins, 0
+    wait 1 gpio 2
+    set pins, 1 side 0
+    irq 1
+.wrap

@@ -1,0 +1,23 @@
+; Model-only, preselected original-flash CS# router. GP6 output defaults high.
+; Before each host CS# falling edge, a FIFO word says PASS=0 or PATCH=1.
+; A stalled/empty FIFO leaves the original flash deselected. Another engine
+; must verify the command and safely gate Pico MISO; this program alone is
+; NOT a board interceptor.
+.program cs_select
+.wrap_target
+start:
+    set pins, 1
+    pull block
+    mov x, osr
+    wait 1 gpio 2
+    wait 0 gpio 2
+    jmp !x passthrough
+patch:
+    wait 1 gpio 2
+    jmp start
+passthrough:
+    set pins, 0
+    wait 1 gpio 2
+    set pins, 1
+    jmp start
+.wrap

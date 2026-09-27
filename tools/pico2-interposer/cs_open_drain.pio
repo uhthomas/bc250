@@ -1,0 +1,16 @@
+; Pass-through boot diagnostic. Pico GP7 is an open-drain-style flash CS#
+; sink: its output latch stays LOW and this SM changes only its direction.
+; The installed resistor pulls flash CS# to the flash's own VCC when released.
+; Firmware must keep GPIO OE forced off until board VCC has been sensed high.
+.program cs_open_drain
+.wrap_target
+start:
+    set pindirs, 0       ; release flash CS# (no Pico-driven high level)
+    wait 1 gpio 2        ; begin only with motherboard CS# idle high
+mirror:
+    wait 0 gpio 2
+    set pindirs, 1       ; sink flash CS# low
+    wait 1 gpio 2
+    set pindirs, 0       ; release to the board-powered pull-up
+    jmp mirror
+.wrap

@@ -1,0 +1,15 @@
+; Isolated Pi bench: sample the GP6 pad at the first and second SPI clocks
+; of each transaction. PIO1 reads GP6 while PIO0 drives it. No outputs.
+; With shift-right IN, the first sample ends in bit 30, second in bit 31.
+.program select_observe
+.wrap_target
+    wait 1 gpio 2
+    wait 0 gpio 2
+    wait 1 gpio 3
+    in pins, 1
+    wait 0 gpio 3
+    wait 1 gpio 3
+    in pins, 1
+    push block
+    wait 1 gpio 2
+.wrap

@@ -1,0 +1,9 @@
+proper video decoding
+
+something to easily switch between steam, youtube, jellyfin with a remote
+
+maybe a usb hub for controllers
+
+bluetooth?
+
+ir for remote?

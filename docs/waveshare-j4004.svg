@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1120" viewBox="0 0 1280 1120" role="img" aria-labelledby="title desc">
+<title id="title">Waveshare USB CH347T programmer to BC250 J4004 wiring</title>
+<desc id="desc">Pi USB-A connects to Waveshare USB-B; no Pi GPIO leads. Select 3.3 volts and M1 with switch 1 OFF and switch 2 ON while unplugged. The Waveshare SPI signals map GND to GND, CS0 to CS#, SCK to SCLK, SDO to MOSI, SDI to MISO, and VCC to VCC only after power checks. J4004 component-side view with white triangle below lower-left VCC: top row GND SCLK MOSI unused; bottom row VCC CS# MISO absent. First test the USB adapter alone, leaving all target leads disconnected. Keep BC250 PSU unplugged and disconnect USB before wiring.</desc>
+<style>text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}a text{text-decoration:underline}</style>
+<rect x="0" y="0" width="1280" height="1120" rx="0" fill="#f6f8fb" stroke="none" />
+<text x="36" y="49" font-size="32" font-weight="750" fill="#172b3a" text-anchor="start" >Waveshare → BC250 J4004</text>
+<text x="36" y="82" font-size="18" font-weight="400" fill="#506477" text-anchor="start" >USB TO UART/I2C/SPI/JTAG (CH347T) • Connector views and six signal mappings</text>
+<rect x="36" y="103" width="1208" height="76" rx="10" fill="#fff0d7" stroke="#d8b56d" />
+<text x="55" y="132" font-size="20" font-weight="700" fill="#754700" text-anchor="start" >FIRST TEST: connect only the USB adapter. Leave every J4004 lead disconnected.</text>
+<text x="55" y="159" font-size="17" font-weight="400" fill="#754700" text-anchor="start" >The previous hookup prevented Pi boot. Check wiring and target supply load before energizing J4004.</text>
+<rect x="36" y="204" width="198" height="107" rx="10" fill="#e0ede6" stroke="#9bbca9" />
+<text x="135" y="241" font-size="21" font-weight="700" fill="#172b3a" text-anchor="middle" >Raspberry Pi 5</text>
+<text x="135" y="270" font-size="18" font-weight="500" fill="#172b3a" text-anchor="middle" >USB-A port</text>
+<text x="135" y="296" font-size="15" font-weight="500" fill="#365744" text-anchor="middle" >No GPIO leads</text>
+<path d="M235 258 L375 258" fill="none" stroke="#506477" stroke-width="5" />
+<text x="305" y="244" font-size="16" font-weight="600" fill="#172b3a" text-anchor="middle" >USB cable</text>
+<rect x="376" y="204" width="322" height="107" rx="10" fill="#e4ecf5" stroke="#a2b5cc" />
+<text x="537" y="241" font-size="21" font-weight="700" fill="#172b3a" text-anchor="middle" >Waveshare programmer</text>
+<text x="537" y="270" font-size="18" font-weight="500" fill="#172b3a" text-anchor="middle" >USB-B socket</text>
+<text x="537" y="296" font-size="15" font-weight="400" fill="#506477" text-anchor="middle" >SPI signals use the other end</text>
+<rect x="724" y="204" width="520" height="107" rx="10" fill="#ffffff" stroke="#cbd5df" />
+<text x="744" y="232" font-size="15" font-weight="700" fill="#506477" text-anchor="start" >SET WITH USB UNPLUGGED</text>
+<text x="744" y="266" font-size="28" font-weight="750" fill="#087e60" text-anchor="start" >3.3 V</text>
+<text x="844" y="265" font-size="24" font-weight="700" fill="#172b3a" text-anchor="start" >M1</text>
+<text x="744" y="294" font-size="18" font-weight="600" fill="#172b3a" text-anchor="start" >Switch 1 OFF  •  Switch 2 ON</text>
+<rect x="1115" y="217" width="108" height="80" rx="6" fill="#b72936" stroke="none" />
+<text x="1169" y="234" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle" >ON ↑</text>
+<rect x="1136" y="241" width="21" height="36" rx="3" fill="#741d28" stroke="none" />
+<rect x="1138" y="262" width="17" height="13" rx="2" fill="#ffffff" stroke="none" />
+<rect x="1180" y="241" width="21" height="36" rx="3" fill="#741d28" stroke="none" />
+<rect x="1182" y="243" width="17" height="13" rx="2" fill="#ffffff" stroke="none" />
+<text x="1146" y="291" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle" >1</text>
+<text x="1190" y="291" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle" >2</text>
+<rect x="36" y="339" width="664" height="290" rx="10" fill="#ffffff" stroke="#cbd5df" />
+<text x="56" y="373" font-size="23" font-weight="700" fill="#172b3a" text-anchor="start" >Waveshare: 12-pin connector</text>
+<text x="56" y="401" font-size="17" font-weight="400" fill="#506477" text-anchor="start" >Look into the connector end, case label upright.</text>
+<rect x="249" y="422" width="433" height="169" rx="9" fill="#f1f6fb" stroke="#bacadb" />
+<text x="151" y="447" font-size="16" font-weight="600" fill="#687b8a" text-anchor="middle" >I2C — unused</text>
+<text x="466" y="447" font-size="16" font-weight="700" fill="#172b3a" text-anchor="middle" >SPI — use these labels</text>
+<rect x="56" y="462" width="91" height="50" rx="7" fill="#edf1f5" stroke="#9aa7b4" stroke-width="1.5"/>
+<text x="101.5" y="495" font-size="22" font-weight="700" fill="#9aa7b4" text-anchor="middle" >VCC</text>
+<rect x="160" y="462" width="91" height="50" rx="7" fill="#edf1f5" stroke="#9aa7b4" stroke-width="1.5"/>
+<text x="205.5" y="495" font-size="22" font-weight="700" fill="#9aa7b4" text-anchor="middle" >SCL</text>
+<rect x="264" y="462" width="91" height="50" rx="7" fill="#fff0c7" stroke="#946000" stroke-width="1.5"/>
+<text x="309.5" y="495" font-size="22" font-weight="700" fill="#946000" text-anchor="middle" >VCC</text>
+<rect x="368" y="462" width="91" height="50" rx="7" fill="#d9ebfc" stroke="#186cac" stroke-width="1.5"/>
+<text x="413.5" y="495" font-size="22" font-weight="700" fill="#186cac" text-anchor="middle" >SDO</text>
+<rect x="472" y="462" width="91" height="50" rx="7" fill="#d4f2e7" stroke="#087e60" stroke-width="1.5"/>
+<text x="517.5" y="495" font-size="22" font-weight="700" fill="#087e60" text-anchor="middle" >SCK</text>
+<rect x="576" y="462" width="91" height="50" rx="7" fill="#edf1f5" stroke="#9aa7b4" stroke-width="1.5"/>
+<text x="621.5" y="495" font-size="22" font-weight="700" fill="#9aa7b4" text-anchor="middle" >CS1</text>
+<rect x="56" y="524" width="91" height="50" rx="7" fill="#edf1f5" stroke="#9aa7b4" stroke-width="1.5"/>
+<text x="101.5" y="557" font-size="22" font-weight="700" fill="#9aa7b4" text-anchor="middle" >GND</text>
+<rect x="160" y="524" width="91" height="50" rx="7" fill="#edf1f5" stroke="#9aa7b4" stroke-width="1.5"/>
+<text x="205.5" y="557" font-size="22" font-weight="700" fill="#9aa7b4" text-anchor="middle" >SDA</text>
+<rect x="264" y="524" width="91" height="50" rx="7" fill="#dce4ec" stroke="#526475" stroke-width="1.5"/>
+<text x="309.5" y="557" font-size="22" font-weight="700" fill="#526475" text-anchor="middle" >GND</text>
+<rect x="368" y="524" width="91" height="50" rx="7" fill="#e8e1fc" stroke="#7450be" stroke-width="1.5"/>
+<text x="413.5" y="557" font-size="22" font-weight="700" fill="#7450be" text-anchor="middle" >SDI</text>
+<rect x="472" y="524" width="91" height="50" rx="7" fill="#fce0e9" stroke="#b92b61" stroke-width="1.5"/>
+<text x="517.5" y="557" font-size="22" font-weight="700" fill="#b92b61" text-anchor="middle" >CS0</text>
+<rect x="576" y="524" width="91" height="50" rx="7" fill="#edf1f5" stroke="#9aa7b4" stroke-width="1.5"/>
+<text x="621.5" y="557" font-size="22" font-weight="700" fill="#9aa7b4" text-anchor="middle" >NC</text>
+<text x="56" y="610" font-size="16" font-weight="400" fill="#506477" text-anchor="start" >Colours identify signals here; actual cable colours may differ.</text>
+<rect x="724" y="339" width="520" height="290" rx="10" fill="#ffffff" stroke="#cbd5df" />
+<text x="744" y="373" font-size="23" font-weight="700" fill="#172b3a" text-anchor="start" >BC250: J4004</text>
+<text x="744" y="401" font-size="17" font-weight="400" fill="#506477" text-anchor="start" >Look down from the component side of the PCB.</text>
+<text x="744" y="434" font-size="17" font-weight="600" fill="#172b3a" text-anchor="start" >Rotate so the white triangle is below VCC.</text>
+<rect x="744" y="462" width="107" height="50" rx="7" fill="#dce4ec" stroke="#526475" stroke-width="1.5"/>
+<text x="797.5" y="495" font-size="22" font-weight="700" fill="#526475" text-anchor="middle" >GND</text>
+<rect x="865" y="462" width="107" height="50" rx="7" fill="#d4f2e7" stroke="#087e60" stroke-width="1.5"/>
+<text x="918.5" y="495" font-size="22" font-weight="700" fill="#087e60" text-anchor="middle" >SCLK</text>
+<rect x="986" y="462" width="107" height="50" rx="7" fill="#d9ebfc" stroke="#186cac" stroke-width="1.5"/>
+<text x="1039.5" y="495" font-size="22" font-weight="700" fill="#186cac" text-anchor="middle" >MOSI</text>
+<rect x="1107" y="462" width="107" height="50" rx="7" fill="#edf1f5" stroke="#9aa7b4" stroke-width="1.5"/>
+<text x="1160.5" y="495" font-size="19" font-weight="700" fill="#9aa7b4" text-anchor="middle" >unused</text>
+<rect x="744" y="524" width="107" height="50" rx="7" fill="#fff0c7" stroke="#946000" stroke-width="1.5"/>
+<text x="797.5" y="557" font-size="22" font-weight="700" fill="#946000" text-anchor="middle" >VCC</text>
+<rect x="865" y="524" width="107" height="50" rx="7" fill="#fce0e9" stroke="#b92b61" stroke-width="1.5"/>
+<text x="918.5" y="557" font-size="22" font-weight="700" fill="#b92b61" text-anchor="middle" >CS#</text>
+<rect x="986" y="524" width="107" height="50" rx="7" fill="#e8e1fc" stroke="#7450be" stroke-width="1.5"/>
+<text x="1039.5" y="557" font-size="22" font-weight="700" fill="#7450be" text-anchor="middle" >MISO</text>
+<rect x="1107" y="524" width="107" height="50" rx="7" fill="#ffffff" stroke="#9aa7b4" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="1160.5" y="557" font-size="19" font-weight="700" fill="#9aa7b4" text-anchor="middle" >absent</text>
+<path d="M797.5 584 L787.5 601 L807.5 601 Z" fill="#ffffff" stroke="#506477" stroke-width="1.5"/>
+<text x="821" y="601" font-size="16" font-weight="600" fill="#506477" text-anchor="start" >White pin-1 triangle</text>
+<text x="1160" y="613" font-size="14" font-weight="600" fill="#687b8a" text-anchor="middle" >Leave empty</text>
+<text x="36" y="668" font-size="23" font-weight="700" fill="#172b3a" text-anchor="start" >Six connections — after the wiring and power checks pass</text>
+<text x="56" y="701" font-size="14" font-weight="700" fill="#506477" text-anchor="start" >WAVESHARE SPI</text>
+<text x="714" y="701" font-size="14" font-weight="700" fill="#506477" text-anchor="start" >J4004</text>
+<text x="936" y="701" font-size="14" font-weight="700" fill="#506477" text-anchor="start" >SIGNAL</text>
+<rect x="36" y="709" width="1208" height="38" rx="6" fill="#dce4ec" stroke="none" />
+<text x="56" y="736" font-size="22" font-weight="700" fill="#526475" text-anchor="start" >GND</text>
+<path d="M208 728 L650 728" fill="none" stroke="#526475" stroke-width="4" />
+<circle cx="208" cy="728" r="5" fill="#526475"/>
+<circle cx="650" cy="728" r="5" fill="#526475"/>
+<text x="714" y="736" font-size="22" font-weight="700" fill="#526475" text-anchor="start" >GND</text>
+<text x="936" y="735" font-size="18" font-weight="600" fill="#526475" text-anchor="start" >Ground</text>
+<rect x="36" y="751" width="1208" height="38" rx="6" fill="#fce0e9" stroke="none" />
+<text x="56" y="778" font-size="22" font-weight="700" fill="#b92b61" text-anchor="start" >CS0</text>
+<path d="M208 770 L650 770" fill="none" stroke="#b92b61" stroke-width="4" />
+<circle cx="208" cy="770" r="5" fill="#b92b61"/>
+<circle cx="650" cy="770" r="5" fill="#b92b61"/>
+<text x="714" y="778" font-size="22" font-weight="700" fill="#b92b61" text-anchor="start" >CS#</text>
+<text x="936" y="777" font-size="18" font-weight="600" fill="#b92b61" text-anchor="start" >Chip select</text>
+<rect x="36" y="793" width="1208" height="38" rx="6" fill="#d4f2e7" stroke="none" />
+<text x="56" y="820" font-size="22" font-weight="700" fill="#087e60" text-anchor="start" >SCK</text>
+<path d="M208 812 L650 812" fill="none" stroke="#087e60" stroke-width="4" />
+<circle cx="208" cy="812" r="5" fill="#087e60"/>
+<circle cx="650" cy="812" r="5" fill="#087e60"/>
+<text x="714" y="820" font-size="22" font-weight="700" fill="#087e60" text-anchor="start" >SCLK</text>
+<text x="936" y="819" font-size="18" font-weight="600" fill="#087e60" text-anchor="start" >Clock</text>
+<rect x="36" y="835" width="1208" height="38" rx="6" fill="#d9ebfc" stroke="none" />
+<text x="56" y="862" font-size="22" font-weight="700" fill="#186cac" text-anchor="start" >SDO</text>
+<path d="M208 854 L650 854" fill="none" stroke="#186cac" stroke-width="4" />
+<circle cx="208" cy="854" r="5" fill="#186cac"/>
+<circle cx="650" cy="854" r="5" fill="#186cac"/>
+<text x="714" y="862" font-size="22" font-weight="700" fill="#186cac" text-anchor="start" >MOSI</text>
+<text x="936" y="861" font-size="18" font-weight="600" fill="#186cac" text-anchor="start" >Programmer → flash</text>
+<rect x="36" y="877" width="1208" height="38" rx="6" fill="#e8e1fc" stroke="none" />
+<text x="56" y="904" font-size="22" font-weight="700" fill="#7450be" text-anchor="start" >SDI</text>
+<path d="M208 896 L650 896" fill="none" stroke="#7450be" stroke-width="4" />
+<circle cx="208" cy="896" r="5" fill="#7450be"/>
+<circle cx="650" cy="896" r="5" fill="#7450be"/>
+<text x="714" y="904" font-size="22" font-weight="700" fill="#7450be" text-anchor="start" >MISO</text>
+<text x="936" y="903" font-size="18" font-weight="600" fill="#7450be" text-anchor="start" >Flash → programmer</text>
+<rect x="36" y="919" width="1208" height="38" rx="6" fill="#fff0c7" stroke="none" />
+<text x="56" y="946" font-size="22" font-weight="700" fill="#946000" text-anchor="start" >VCC</text>
+<path d="M208 938 L650 938" fill="none" stroke="#946000" stroke-width="4" stroke-dasharray="9 7"/>
+<circle cx="208" cy="938" r="5" fill="#946000"/>
+<circle cx="650" cy="938" r="5" fill="#946000"/>
+<text x="714" y="946" font-size="22" font-weight="700" fill="#946000" text-anchor="start" >VCC</text>
+<text x="936" y="945" font-size="18" font-weight="600" fill="#946000" text-anchor="start" >3.3 V — pending checks</text>
+<text x="36" y="996" font-size="17" font-weight="500" fill="#172b3a" text-anchor="start" >Use female sockets at J4004. Leave CS1, NC, I2C and UART unused. Remove the BIOS clip.</text>
+<text x="36" y="1024" font-size="17" font-weight="600" fill="#172b3a" text-anchor="start" >Keep the BC250 PSU unplugged. Unplug the Waveshare USB cable before connecting or moving wires.</text>
+<path d="M36 1043 L1244 1043" fill="none" stroke="#cbd5df" stroke-width="1" />
+<a href="waveshare-j4004.md">
+<text x="36" y="1073" font-size="16" font-weight="600" fill="#186cac" text-anchor="start" >Full wiring and power-check procedure</text>
+</a>
+<a href="https://www.waveshare.com/wiki/USB_TO_UART/I2C/SPI/JTAG">
+<text x="650" y="1073" font-size="15" font-weight="500" fill="#186cac" text-anchor="start" >Waveshare reference</text>
+</a>
+<a href="https://github.com/mothenjoyer69/bc250-documentation/blob/main/hardware.md#j4004">
+<text x="948" y="1073" font-size="15" font-weight="500" fill="#186cac" text-anchor="start" >BC250 J4004 reference</text>
+</a>
+<text x="36" y="1100" font-size="15" font-weight="400" fill="#506477" text-anchor="start" >Signal layout only. The actual adapter, wiring and in-circuit target supply still require verification.</text>
+</svg>

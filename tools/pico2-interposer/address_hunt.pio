@@ -1,0 +1,15 @@
+; Input-only command sniffer at the existing 150 MHz Pico system clock.
+; One 32-bit opcode/address word per CS# transaction, shifted MSB first.
+; SM never writes pins, pin directions or output-enable. Core1 drains RX.
+.program address_hunt
+.wrap_target
+    wait 1 gpio 2
+    wait 0 gpio 2
+    set x, 31
+bit:
+    wait 1 gpio 3
+    in pins, 1
+    wait 0 gpio 3
+    jmp x-- bit
+    wait 1 gpio 2
+.wrap

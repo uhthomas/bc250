@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+<title id="title">Isolated Pi 5 to Pico 2 SPI bench wiring</title>
+<desc id="desc">With both devices unpowered and all BC250 leads removed, connect five female-to-female jumpers: yellow CS from Pico physical pin 4 to Pi physical pin 24; green SCLK from Pico 5 to Pi 23; blue MOSI from Pico 6 to Pi 19; purple MISO from Pico 7 to Pi 21; grey ground from Pico 8 to Pi 25. Power the Pico by USB from the Pi. Do not connect 3.3 V, VCC, or Pico GP6.</desc>
+<style>
+  text{font-family:system-ui,sans-serif;fill:#152433}
+  .title{font-size:30px;font-weight:700}
+  .head{font-size:21px;font-weight:700}
+  .body{font-size:18px}
+  .small{font-size:15px}
+  .pin{font-size:14px;font-weight:700;text-anchor:middle;dominant-baseline:central}
+  .row{font-size:19px;font-weight:650}
+  .muted{fill:#536474}
+</style>
+<rect width="1200" height="900" fill="#f7fafc"/>
+<text x="40" y="48" class="title">Pi 5 ↔ Pico 2: isolated SPI bench</text>
+<text x="40" y="81" class="body">For the reply-speed test only. All pin numbers below are physical header positions.</text>
+
+<rect x="40" y="107" width="1120" height="76" rx="11" fill="#fff1cd" stroke="#c89425" stroke-width="2"/>
+<text x="60" y="138" class="head">First: BC250 off; remove all five J4004 leads from the Pico.</text>
+<text x="60" y="166" class="body">Unplug Pi and Pico while moving wires. Waveshare stays disconnected. No soldering.</text>
+
+<rect x="40" y="207" width="520" height="381" rx="12" fill="#e2f2e8" stroke="#3d7656" stroke-width="2"/>
+<text x="60" y="242" class="head">Pico 2 — GP labels face you; USB at TOP</text>
+<rect x="270" y="258" width="65" height="34" rx="7" fill="#c1cbd3" stroke="#536474"/>
+<text x="302" y="281" class="small" text-anchor="middle">USB ↑</text>
+<text x="60" y="303" class="small">Pin 1 nearest USB on LEFT; count down:</text>
+<rect x="71" y="316" width="37" height="264" rx="8" fill="#24323a"/>
+<circle cx="89" cy="335" r="14" fill="#edf1f4"/><text x="89" y="335" class="pin">1</text><text x="127" y="341" class="body">GP0</text>
+<circle cx="89" cy="363" r="14" fill="#edf1f4"/><text x="89" y="363" class="pin">2</text><text x="127" y="369" class="body">GP1</text>
+<circle cx="89" cy="391" r="14" fill="#edf1f4"/><text x="89" y="391" class="pin">3</text><text x="127" y="397" class="body">GND — unused here</text>
+<circle cx="89" cy="419" r="14" fill="#f4d35e"/><text x="89" y="419" class="pin">4</text><text x="127" y="425" class="body">GP2 / CS#</text>
+<circle cx="89" cy="447" r="14" fill="#6fdbbf"/><text x="89" y="447" class="pin">5</text><text x="127" y="453" class="body">GP3 / SCLK</text>
+<circle cx="89" cy="475" r="14" fill="#86c9f4"/><text x="89" y="475" class="pin">6</text><text x="127" y="481" class="body">GP4 / MOSI</text>
+<circle cx="89" cy="503" r="14" fill="#b2a4f4"/><text x="89" y="503" class="pin">7</text><text x="127" y="509" class="body">GP5 / MISO</text>
+<circle cx="89" cy="531" r="14" fill="#c1cbd3"/><text x="89" y="531" class="pin">8</text><text x="127" y="537" class="body">GND</text>
+<circle cx="89" cy="559" r="14" fill="#edf1f4"/><text x="89" y="559" class="pin">9</text><text x="127" y="565" class="body">GP6 — no wire</text>
+
+<rect x="640" y="207" width="520" height="381" rx="12" fill="#eaf3fb" stroke="#5a84a6" stroke-width="2"/>
+<text x="660" y="242" class="head">Pi 5 — GPIO header, top view</text>
+<text x="660" y="271" class="small">Pin 1 = top of INNER/LEFT column; count from here.</text>
+<text x="660" y="292" class="small">USB / Ethernet sockets at BOTTOM; do not count from them.</text>
+<rect x="724" y="309" width="92" height="264" rx="7" fill="#24323a"/>
+<circle cx="747" cy="329" r="15" fill="#edf1f4"/><text x="747" y="329" class="pin">1</text>
+<circle cx="792" cy="329" r="15" fill="#edf1f4"/><text x="792" y="329" class="pin">2</text>
+<text x="770" y="358" class="head" text-anchor="middle" style="fill:#fff">⋮</text>
+<circle cx="747" cy="383" r="15" fill="#edf1f4"/><text x="747" y="383" class="pin">17</text>
+<circle cx="792" cy="383" r="15" fill="#edf1f4"/><text x="792" y="383" class="pin">18</text>
+<circle cx="747" cy="419" r="15" fill="#86c9f4"/><text x="747" y="419" class="pin">19</text>
+<circle cx="792" cy="419" r="15" fill="#edf1f4"/><text x="792" y="419" class="pin">20</text>
+<circle cx="747" cy="455" r="15" fill="#b2a4f4"/><text x="747" y="455" class="pin">21</text>
+<circle cx="792" cy="455" r="15" fill="#edf1f4"/><text x="792" y="455" class="pin">22</text>
+<circle cx="747" cy="491" r="15" fill="#6fdbbf"/><text x="747" y="491" class="pin">23</text>
+<circle cx="792" cy="491" r="15" fill="#f4d35e"/><text x="792" y="491" class="pin">24</text>
+<circle cx="747" cy="527" r="15" fill="#c1cbd3"/><text x="747" y="527" class="pin">25</text>
+<circle cx="792" cy="527" r="15" fill="#edf1f4"/><text x="792" y="527" class="pin">26</text>
+<text x="842" y="565" class="small">Pins 27–40 continue below.</text>
+<text x="842" y="388" class="small">17 = 3.3 V: no wire</text>
+<text x="842" y="425" class="body">19 = MOSI</text>
+<text x="842" y="461" class="body">21 = MISO</text>
+<text x="842" y="497" class="body">23 = SCLK; 24 = CE0#</text>
+<text x="842" y="533" class="body">25 = GND</text>
+
+<text x="40" y="627" class="head">Connect five female-to-female jumpers, matching the colours:</text>
+<rect x="40" y="645" width="1120" height="183" rx="11" fill="#fff" stroke="#bdcbd6"/>
+<rect x="57" y="655" width="1086" height="29" rx="5" fill="#fff4bf"/>
+<text x="74" y="677" class="row">YELLOW</text><text x="250" y="677" class="row">Pico 4 / GP2 / CS#</text><path d="M528 669 H670" stroke="#dca700" stroke-width="7"/><text x="707" y="677" class="row">Pi 24 / CE0#</text>
+<rect x="57" y="689" width="1086" height="29" rx="5" fill="#dcf8ed"/>
+<text x="74" y="711" class="row">GREEN</text><text x="250" y="711" class="row">Pico 5 / GP3 / SCLK</text><path d="M528 703 H670" stroke="#2c9979" stroke-width="7"/><text x="707" y="711" class="row">Pi 23 / SCLK</text>
+<rect x="57" y="723" width="1086" height="29" rx="5" fill="#e1f2ff"/>
+<text x="74" y="745" class="row">BLUE</text><text x="250" y="745" class="row">Pico 6 / GP4 / MOSI</text><path d="M528 737 H670" stroke="#3191d2" stroke-width="7"/><text x="707" y="745" class="row">Pi 19 / MOSI</text>
+<rect x="57" y="757" width="1086" height="29" rx="5" fill="#eee8ff"/>
+<text x="74" y="779" class="row">PURPLE</text><text x="250" y="779" class="row">Pico 7 / GP5 / MISO</text><path d="M528 771 H670" stroke="#8063d1" stroke-width="7"/><text x="707" y="779" class="row">Pi 21 / MISO</text>
+<rect x="57" y="791" width="1086" height="29" rx="5" fill="#e8edf1"/>
+<text x="74" y="813" class="row">GREY</text><text x="250" y="813" class="row">Pico 8 / GND</text><path d="M528 805 H670" stroke="#778b99" stroke-width="7"/><text x="707" y="813" class="row">Pi 25 / GND</text>
+
+<text x="40" y="857" class="body">Then plug Pico USB into Pi 5 for power. No VCC / 3.3 V / VSYS / VBUS jumper; Pico pin 9 stays empty.</text>
+<text x="40" y="882" class="small muted">BC250 and Waveshare remain disconnected throughout this bench test. Full instructions: docs/pico2-fast-bench.md</text>
+</svg>

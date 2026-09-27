@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1000" viewBox="0 0 1200 1000" role="img" aria-labelledby="title desc">
+<title id="title">Later stage: switch only BIOS CS#</title><desc id="desc">Lift BIOS flash leg 1 from its pad. SPDT common to lifted leg, stock throw to old PCB pad, Pico throw to GP7 physical 10. Ten kiloohm resistor from lifted leg to board flash VCC leg 8. Switch only unpowered. Current firmware is not an active interposer.</desc>
+<style>text{font-family:system-ui,sans-serif;fill:#152433}.title{font-size:28px;font-weight:700}.head{font-size:21px;font-weight:650}.body{font-size:17px}.small{font-size:14px}.num{font-size:16px;font-weight:700;text-anchor:middle;dominant-baseline:central}</style>
+<rect width="1200" height="1000" fill="#f7fafc"/>
+<text x="34" y="46" class="title" >Later stage: STOCK / PICO chip-select switch</text>
+<text x="34" y="78" class="body" >Do the passive capture and isolated bench test first. No chip modification is needed for stage 1.</text>
+<rect x="32" y="106" width="1136" height="70" rx="10" fill="#fff1cd" stroke="#d0a449"/>
+<text x="50" y="134" class="head" >Current UF2 files cannot boot the BC250 in the PICO switch position.</text>
+<text x="50" y="160" class="body" >Keep STOCK for the first boot after rework. Move the switch only with all power disconnected.</text>
+<text x="58" y="221" class="head" >Macronix BIOS flash — top view</text>
+<rect x="116" y="260" width="270" height="228" rx="10" fill="#dae1e7" stroke="#52616e"/>
+<circle cx="142" cy="285" r="9" fill="#33485b"/>
+<path d="M116 286 H80" fill="none" stroke="#52616e" stroke-width="8" />
+<path d="M386 286 H422" fill="none" stroke="#52616e" stroke-width="8" />
+<text x="102" y="272" class="small" >1</text>
+<text x="395" y="272" class="small" >8</text>
+<path d="M116 343 H80" fill="none" stroke="#52616e" stroke-width="8" />
+<path d="M386 343 H422" fill="none" stroke="#52616e" stroke-width="8" />
+<text x="102" y="329" class="small" >2</text>
+<text x="395" y="329" class="small" >7</text>
+<path d="M116 400 H80" fill="none" stroke="#52616e" stroke-width="8" />
+<path d="M386 400 H422" fill="none" stroke="#52616e" stroke-width="8" />
+<text x="102" y="386" class="small" >3</text>
+<text x="395" y="386" class="small" >6</text>
+<path d="M116 457 H80" fill="none" stroke="#52616e" stroke-width="8" />
+<path d="M386 457 H422" fill="none" stroke="#52616e" stroke-width="8" />
+<text x="102" y="443" class="small" >4</text>
+<text x="395" y="443" class="small" >5</text>
+<text x="181" y="311" class="small" >pin-1 dot</text>
+<text x="180" y="377" class="body" >Other 7 legs</text>
+<text x="170" y="405" class="body" >remain soldered</text>
+<text x="54" y="521" class="body" >Leg 1 lifted clear of its old PCB pad.</text>
+<text x="54" y="551" class="small" >Identify the real chip dot with magnification.</text>
+<text x="470" y="224" class="head" >SPDT ON/ON — identify common with a meter</text>
+<rect x="620" y="285" width="245" height="228" rx="10" fill="#eaf3fb" stroke="#81a9c8"/>
+<text x="642" y="317" class="head" >STOCK</text>
+<text x="642" y="485" class="head" >PICO</text>
+<circle cx="620" cy="395" r="11" fill="white" stroke="#52616e" stroke-width="2"/>
+<text x="615" y="375" class="body" >C</text>
+<circle cx="865" cy="340" r="11" fill="white" stroke="#52616e" stroke-width="2"/>
+<text x="860" y="320" class="body" >A</text>
+<circle cx="865" cy="455" r="11" fill="white" stroke="#52616e" stroke-width="2"/>
+<text x="860" y="435" class="body" >B</text>
+<path d="M80 286 H52 V244 H575 V395 H609" fill="none" stroke="#d4a900" stroke-width="4" />
+<path d="M631 395 L854 340" fill="none" stroke="#d4a900" stroke-width="4" />
+
+<path d="M876 340 H1110" fill="none" stroke="#d4a900" stroke-width="4" />
+<text x="891" y="297" class="body" >Old PCB pad under leg 1</text>
+<text x="891" y="322" class="small" >Motherboard CS#</text>
+<path d="M876 455 H1110" fill="none" stroke="#267b91" stroke-width="4" />
+<text x="891" y="418" class="body" >Pico GP7</text>
+<text x="891" y="444" class="small" >physical pin 10</text>
+<path d="M422 286 H480 V607 H380" fill="none" stroke="#b78417" stroke-width="3" />
+<rect x="280" y="593" width="100" height="28" rx="2" fill="#ffedc0" stroke="#b78417"/>
+<text x="330" y="584" class="body" text-anchor="middle">10 kΩ</text>
+<path d="M280 607 H52 V286" fill="none" stroke="#d4a900" stroke-width="3" />
+<text x="507" y="612" class="body" >Pull-up goes to BOARD VCC / chip leg 8.</text>
+<text x="507" y="641" class="body" >Never connect it to Pico 3V3.</text>
+<rect x="32" y="695" width="1136" height="263" rx="10" fill="#eaf3fb" stroke="#81a9c8"/>
+<text x="50" y="728" class="head" >Meter checks, with both devices unplugged</text>
+<text x="50" y="765" class="body" >STOCK: common/lifted leg → old pad/J4004 CS#. GP7 throw disconnected.</text>
+<text x="50" y="800" class="body" >PICO: common/lifted leg → GP7. No direct copper connection to the old pad.</text>
+<text x="50" y="835" class="body" >Keep the switch and soldered wires short. Insulate and strain-relieve the lifted leg.</text>
+<text x="50" y="877" class="head" >Recovery: power off → STOCK → remove all Pico signal wires, especially MISO.</text>
+<text x="50" y="912" class="body" >This switch bypasses only CS#. It cannot disconnect a Pico that is incorrectly driving MISO.</text>
+<text x="50" y="941" class="small" >Full procedure and unchanged signal wiring: docs/pico2-wiring.md. Schematic, not board orientation.</text>
+</svg>

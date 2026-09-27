@@ -1,0 +1,49 @@
+; Isolated Pi bench only. One SM controls both original-flash CS# (GP6) and
+; substituted MISO (GP5). Before each transaction its FIFO contains two
+; words: PASS=0 or PATCH=1, then the PATCH reply (unused for PASS).
+; PASS is selected while host CS# is still high, before the first SPI clock.
+; There is no command/address check, fault path, or safe board-arm command.
+; The stock BIOS flash MUST NOT be connected to this experimental program.
+.program fast_select
+.side_set 1 opt pindirs
+.wrap_target
+start:
+    set pins, 1 side 0     ; GP6 high, GP5 high-Z; safe if the FIFO stalls
+    pull block
+    mov y, osr
+    pull block             ; OSR holds the 32-bit reply for PATCH
+    jmp !y pass
+    wait 1 gpio 2
+    wait 0 gpio 2
+patch:
+    set x, 29
+command_bit:
+    wait 1 gpio 3
+    jmp x-- command_fall
+    ; GP6 is already high. Begin MISO before the first data sampling edge.
+    out pins, 1 side 1
+    set x, 30
+    wait 0 gpio 3
+    wait 1 gpio 3
+    wait 0 gpio 3
+    wait 1 gpio 3
+    wait 0 gpio 3
+data_bit:
+    wait 1 gpio 3
+    out pins, 1 side 1
+    wait 0 gpio 3
+    jmp x-- data_bit
+    wait 1 gpio 3
+    wait 1 gpio 2 side 0
+    jmp start side 0
+pass:
+    set pins, 0 side 0    ; select the original flash during host idle
+    wait 1 gpio 2
+    wait 0 gpio 2
+    wait 1 gpio 2 side 0
+    set pins, 1 side 0
+    jmp start side 0
+command_fall:
+    wait 0 gpio 3
+    jmp command_bit
+.wrap

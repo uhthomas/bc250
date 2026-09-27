@@ -8,8 +8,9 @@ controller support, Steam from RPM Fusion, and the BC-250 SMU governor from
 filippor's COPR. That COPR is restricted to the governor package. CPU/CU unlocks
 remain opt-in. The earlier `0.1.0` images used Bazzite; use `0.2.1` for new installs.
 
-This is an initial image, not yet validated on a physical BC-250. Assume the
-Jellyfin server runs elsewhere. Hardware-dependent checks are listed below.
+Image `0.2.1` is running on the tested BC-250. The full TV playback and remote
+experience still needs validation; video decoding limitations are recorded below.
+Assume the Jellyfin server runs elsewhere.
 
 The repository follows the structure of `weyvalleyradio/ops/images/offair`:
 explicit installation paths in a versioned `Containerfile`, top-level helper
@@ -30,16 +31,37 @@ OS rollback. User Flatpaks and Kodi add-ons update independently of the OS image
 ## Power management
 
 CPU idle and frequency scaling require corrected ACPI tables on this board.
-The default `ACPI_MODE=initramfs` build compiles the pinned
+The recommended default `ACPI_MODE=initramfs` build compiles the pinned
 [6/8-core ACPI fix](https://github.com/e-tho/bc250-acpi-fix) and includes its tables
 in the image's initramfs. This provides the idle-state definitions and the eight
 800–3200 MHz P-states, without a per-machine `/boot` script or local initramfs
 regeneration. Kernel, initramfs and ACPI fixes update and roll back together.
+Use this mode with BIOS CPU unlocking too: the core-unlock and ACPI settings
+are independent. It replaces the invalid stock CPU table, while the currently
+tested BIOS patch leaves that table present alongside its corrections.
 
 **Use only one ACPI provider.** With the default image, disable a modded BIOS's
 ACPI injection. If the BIOS already provides the fixes and you want to use those,
 build with `--build-arg ACPI_MODE=firmware` instead. That image leaves the base
 initramfs intact. `cat /usr/share/bc250/acpi-mode` identifies the installed choice.
+
+To move an existing installation to the
+[MeiMeiDXEv3 BIOS's ACPI patch](https://github.com/RescueMei/BC250-DXEv3-ACPI-Driver), first
+stage `sudo bootc switch ghcr.io/uhthomas/bc250:0.2.1-firmware`. Enable **ACPI
+Patch** under **Advanced → MeiMeiDXEv3 Menu** before booting that deployment.
+This is a BIOS setting change; an installed MeiMeiDXEv3 BIOS does not need
+another flash. After boot, verify frequency scaling and increasing idle-state
+residency using the checks below. The BIOS tables differ from the image's tables,
+so verify the enabled core configuration rather than assuming identical behavior.
+Its partial-core configuration exposes C1/C2; the eight-core configuration also
+exposes C3. It leaves the original, invalid `AMD CPU` table present, so kernel
+logs can still contain `AE_NOT_FOUND` errors for `\_PR.C000` through `\_PR.C00B`
+even with the corrected `BC25` tables loaded. Verify actual frequency changes
+and idle residency; exposed state names alone are insufficient.
+
+When returning to an image that injects ACPI tables, disable the BIOS ACPI patch
+before booting it. `bootc rollback` does not change BIOS settings, and resetting
+BIOS settings can disable the patch needed by a firmware-mode image.
 
 The default TuneD profile is `bc250-balanced`, using `schedutil` (or `ondemand`)
 so CPU frequency follows load and boost remains available. CPU C-states are
@@ -47,7 +69,7 @@ allowed; disabling system suspend does not disable CPU idle states. The CPU is
 not held at a fixed overclock or a permanent performance governor. KDE's balanced
 power profile maps to this policy; power-saver and performance remain explicit
 user choices. On an existing installation whose `/etc` settings have been changed,
-select balanced again with `powerprofilesctl set balanced` after rebasing.
+select balanced again in KDE's power settings after rebasing.
 
 The GPU's separate SMU governor scales between **500 and 1500 MHz**, using the
 supplied 700–900 mV operating points, allowing lower clocks during light loads.
@@ -59,7 +81,7 @@ Verify after boot:
 
 ```sh
 tuned-adm active
-powerprofilesctl get
+busctl get-property net.hadess.PowerProfiles /net/hadess/PowerProfiles net.hadess.PowerProfiles ActiveProfile
 cpupower frequency-info
 cpupower idle-info
 cat /sys/devices/system/cpu/cpufreq/policy*/scaling_governor
@@ -102,7 +124,7 @@ desktop alternative while the full remote experience is validated.
 
 The major hardware constraint is **video decoding**. Do not assume that this APU
 has the video acceleration of an ordinary desktop Radeon. As checked on
-2026-09-21, we have not found a confirmed working BC-250 VCN decoding configuration
+2026-09-22, we have not found a confirmed working BC-250 VCN decoding configuration
 to ship. [VCN enablement research](https://github.com/daveconde/bc250-vcn-enable)
 identifies VCN 2.0.3 in the firmware's IP discovery data, but is still working on
 power/reset sequencing and initialization. This is not evidence that decoding is
@@ -110,14 +132,53 @@ physically impossible, nor a ready BIOS toggle or driver setting.
 
 The separate
 [compute-video driver](https://github.com/simpmix/bc250-encoding-decoding-fix)
-accelerates **encoding** using GPU compute and explicitly advertises no decode
-entrypoints. Installing it does not enable accelerated Jellyfin/YouTube playback.
+accelerates **encoding** using GPU compute. Its September 22 revision also
+advertises H.264/HEVC `VAEntrypointVLD`, but implements decoding on the **CPU**.
+Those entrypoints do not establish GPU-accelerated Jellyfin/YouTube playback.
 Unlocking 40 CUs also does not enable VCN. Plan on CPU decoding or transcoding on
 the Jellyfin server until a decoder is demonstrated on this board. Test CPU use
 and wall power during playback; a low idle power figure does not establish low
 video-playback power. Validate high-bitrate 4K HEVC, VP9/AV1, subtitles,
 HDR, audio passthrough, and frame pacing with your actual media before replacing
 the Shield. Dolby Vision and Android streaming-app compatibility are not promised.
+
+On the tested board with the modified BIOS, 512 MiB VRAM and all 40 CUs enabled,
+the September 22 check found VCN 2.0.3 in IP discovery (`harvest=0`) but no loaded
+VCN firmware or usable video rings. Forced VA-API and Vulkan decoding failed for
+H.264, HEVC, VP9 and AV1; the same clips passed software decoding. The isolated
+test used FFmpeg 8.1.2 with full codecs and Mesa 26.2.2, required hardware frames,
+and selected the BC-250 explicitly for Vulkan. Subsequent temporary clock and
+power-up commands completed, but three VCN registers still read `0xffffffff`
+while a PSP control register read normally. The remaining reset/isolation issue
+is unresolved. A normal reboot restored the original measured firmware state,
+with 16 CPU threads, 40 CUs and CPU frequency scaling active. Follow-up reset
+writes also left VCN inaccessible. A separate diagnostic driver loaded on a
+one-time boot; the PSP completed its VCN firmware-load command but rejected
+`navi10_vcn.bin` with status `0xffff0008`, no firmware address, and unchanged
+inaccessible registers. The normal driver, CPU scaling and 40-CU routing were
+restored afterward. Offline analysis found a type-13 loader and a key-ID lookup
+that returns this exact error; the tested VCN firmware's key ID is absent from
+the pinned BIOS. The original Discord research supplied an AMD-published public
+key that independently verifies this exact firmware with RSA-PSS/SHA-256.
+Two subsequent live negative controls returned `0xffff0008` with the missing VCN
+key ID and `0x80000205` with an installed graphics key ID, matching the emulated
+missing-key and wrong-key-type paths. This supports a missing authentication key
+as the immediate load failure; it does not establish a BIOS fix or resolve VCN
+isolation. The diagnostic entry was removed and the normal deployment restored.
+A later isolated test of the Discord script's 1250 MHz VCN clock setting was
+acknowledged but left the same three registers inaccessible. All writable clock
+controls were restored. Hardware decoding remains unavailable.
+The [next hardware-decode investigation](docs/video-decode-next-step.md)
+includes a [Pi 5 input-only SPI capture experiment](tools/pi5-spi-capture/README.md).
+Its software is prepared, but no loopback traffic or BC-250 boot trace has been
+captured, and it has not enabled decoding.
+A subsequent read through the SMU's local register window stalled the SMU even
+with those clocks enabled. The user's reboot restored SMU responsiveness and
+the measured clock baseline; CPU scaling and the GPU governor are active again.
+That register read must not be repeated as a routine diagnostic.
+Avoid live driver unloading on this board: an earlier
+replacement attempt stalled it. No video driver or firmware changes were added
+to the bootc image from this investigation.
 
 The board has DisplayPort. Select a DP-to-HDMI adapter for the actual TV mode and
 audio formats required; test that entire path. CEC and wake from a remote should
@@ -183,6 +244,17 @@ Establish a working firmware baseline first. The community baseline uses a
 modified BIOS with **512 MB dynamic VRAM** and **IOMMU disabled**; use the settings
 appropriate to your firmware and verify the exposed system/GPU memory. See
 [the BC-250 community prerequisites](https://github.com/62fixolab/Latest-Bazzite-AMD-BC-250-Patched-Images#install).
+
+If IOMMU becomes enabled after BIOS changes, the GPU can fail to load firmware
+and the governor/CU-restore services will fail too. On this board, adding
+`sudo rpm-ostree kargs --append-if-missing=amd_iommu=off` and rebooting restored
+AMDGPU with the 512 MB allocation intact. This is a persistent per-machine boot
+argument; it does not modify the image. Confirm the argument in `/proc/cmdline`
+and the driver with `lspci -nnk -s 01:00.0` after boot.
+
+After disabling IOMMU in BIOS, remove the workaround with
+`sudo rpm-ostree kargs --delete-if-present=amd_iommu=off` and reboot. Confirm that
+the argument is absent and AMDGPU still initializes normally.
 
 Select `0.2.1` when this image supplies ACPI fixes, or `0.2.1-firmware` when the
 BIOS supplies them. Verify the BIOS setting first; an unknown configuration is
@@ -426,6 +498,20 @@ firmware or arrange automatic CPU-unlock reboot loops. BIOS modifications cannot
 be undone by `bootc rollback`. Until firmware is changed, rerun the helper and warm
 reboot after each cold start to use all eight cores.
 
+For the tested MeiMeiDXEv3 BIOS and this image's default ACPI mode:
+
+| BIOS option | Setting |
+| --- | --- |
+| SMU unlock | Enabled |
+| CPU core unlock | All cores, after validating the board |
+| ACPI patch | Disabled; supplied by the image |
+| SMU reporting patch | Disabled with the tested Fedora kernel |
+
+The optional SMU reporting patch needs matching kernel support for its changed
+metrics format. With Fedora's tested `7.2.5-200.fc44` kernel it produced impossible
+voltage and power readings; disabling only that patch restored normal readings
+while retaining all eight cores. Keep the governor correction below enabled.
+
 CPU unlocking can also affect GPU clock telemetry. The supplied governor can
 correct the `gpu_metrics` clock field using its SMU reading; after unlocking,
 enable that correction in the machine's configuration:
@@ -513,7 +599,9 @@ Useful diagnostics: `bootc status`, `lscpu`, `lspci -nnk`, `vainfo`,
 `vainfo` failure/no usable decode profiles is consistent with the video limitation;
 do not interpret GPU rendering support as proof of video decoding support.
 Any proposed VA-API decoding fix needs the relevant codec's `VAEntrypointVLD`
-profile and a successful hardware-decoded playback test in the actual client.
+profile, confirmation that the driver performs decoding on GPU hardware, and a
+successful hardware-decoded playback test in the actual client. A CPU decoder
+wrapped in VA-API can advertise the same entrypoint.
 `VAEntrypointEncSlice` only demonstrates an encoding entrypoint. A host driver
 also needs to be available to a Flatpak client's runtime; host `vainfo` alone is
 not sufficient.

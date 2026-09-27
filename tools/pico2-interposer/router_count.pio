@@ -1,0 +1,27 @@
+; Independent PIO block, input-only transfer length monitor. IN_BASE=CS,
+; IN_COUNT=1 (RP2350 feature), JMP_PIN=SCLK. Counts selected rising clocks.
+.program router_count
+.pio_version 1
+.wrap_target
+    wait 0 gpio 2
+    mov y, ~null
+high:
+    mov x, pins
+    jmp !x selected_high
+    jmp done
+selected_high:
+    jmp pin rise
+    jmp high
+rise:
+    jmp y-- low
+low:
+    mov x, pins
+    jmp !x selected_low
+    jmp done
+selected_low:
+    jmp pin low
+    jmp high
+done:
+    mov isr, ~y
+    push block
+.wrap

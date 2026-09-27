@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="930" viewBox="0 0 1200 930" role="img" aria-labelledby="title desc">
+  <title id="title">Pico 2 GP6 unpowered resistance checks</title>
+  <desc id="desc">Unplug the Pi 5, Pico USB, and all five jumper wires. Viewed with the Pico 2 labels facing you and USB socket at the top, physical pin 9 GP6 is ninth down on the left, directly below physical pin 8 GND. Physical pin 36 3V3 OUT is fifth down on the right. Set the multimeter to resistance. Keep one probe on pin 9; touch the other probe to pin 36 and record the reading, then to pin 8 and record the reading. These are temporary meter-probe measurements, not wiring connections. Do not apply power during resistance checks.</desc>
+  <style>
+    text{font-family:system-ui,sans-serif;fill:#172633}
+    .title{font-size:31px;font-weight:750}
+    .head{font-size:22px;font-weight:700}
+    .body{font-size:19px}
+    .small{font-size:16px}
+    .pin{font-size:16px;font-weight:750;text-anchor:middle;dominant-baseline:central}
+    .leftlabel{text-anchor:end}
+    .muted{fill:#566878}
+  </style>
+  <rect width="1200" height="930" fill="#f7fafc"/>
+  <text x="40" y="52" class="title">Pico 2: check GP6 with a multimeter</text>
+  <text x="40" y="84" class="body">These are temporary probe positions on the Pico header — no wires are added.</text>
+
+  <rect x="40" y="109" width="1120" height="91" rx="12" fill="#fff1cd" stroke="#b7831e" stroke-width="2"/>
+  <text x="61" y="143" class="head">Before measuring: power everything OFF.</text>
+  <text x="61" y="173" class="body">Unplug Pico USB, switch off/unplug the Pi 5, and remove all five Pi↔Pico jumpers.</text>
+
+  <text x="600" y="235" class="head" text-anchor="middle">Pico 2 — printed GP labels face you; USB socket at TOP</text>
+  <rect x="552" y="253" width="96" height="45" rx="8" fill="#c7d0d8" stroke="#586a78" stroke-width="2"/>
+  <text x="600" y="283" class="small" text-anchor="middle">USB ↑</text>
+  <rect x="480" y="299" width="240" height="382" rx="15" fill="#e0f3e9" stroke="#367058" stroke-width="3"/>
+  <rect x="491" y="311" width="218" height="358" rx="8" fill="#d0eadc"/>
+  <rect x="466" y="314" width="32" height="355" rx="6" fill="#253640"/>
+  <rect x="702" y="314" width="32" height="355" rx="6" fill="#253640"/>
+  <text x="600" y="480" class="head" text-anchor="middle">Pico 2</text>
+  <text x="600" y="512" class="small muted" text-anchor="middle">physical pin numbers</text>
+  <text x="600" y="536" class="small muted" text-anchor="middle">count from USB end</text>
+
+  <circle cx="482" cy="333" r="17" fill="#edf1f4"/><text x="482" y="333" class="pin">1</text>
+  <circle cx="482" cy="372" r="17" fill="#edf1f4"/><text x="482" y="372" class="pin">2</text>
+  <circle cx="482" cy="411" r="17" fill="#edf1f4"/><text x="482" y="411" class="pin">3</text>
+  <circle cx="482" cy="450" r="17" fill="#edf1f4"/><text x="482" y="450" class="pin">4</text>
+  <circle cx="482" cy="489" r="17" fill="#edf1f4"/><text x="482" y="489" class="pin">5</text>
+  <circle cx="482" cy="528" r="17" fill="#edf1f4"/><text x="482" y="528" class="pin">6</text>
+  <circle cx="482" cy="567" r="17" fill="#edf1f4"/><text x="482" y="567" class="pin">7</text>
+  <circle cx="482" cy="606" r="20" fill="#aab6c0" stroke="#576a78" stroke-width="2"/><text x="482" y="606" class="pin">8</text>
+  <circle cx="482" cy="645" r="20" fill="#ffd94d" stroke="#a36f00" stroke-width="2"/><text x="482" y="645" class="pin">9</text>
+
+  <circle cx="718" cy="333" r="17" fill="#edf1f4"/><text x="718" y="333" class="pin">40</text>
+  <circle cx="718" cy="372" r="17" fill="#edf1f4"/><text x="718" y="372" class="pin">39</text>
+  <circle cx="718" cy="411" r="17" fill="#edf1f4"/><text x="718" y="411" class="pin">38</text>
+  <circle cx="718" cy="450" r="17" fill="#edf1f4"/><text x="718" y="450" class="pin">37</text>
+  <circle cx="718" cy="489" r="20" fill="#ffad85" stroke="#a34725" stroke-width="2"/><text x="718" y="489" class="pin">36</text>
+  <circle cx="718" cy="528" r="17" fill="#edf1f4"/><text x="718" y="528" class="pin">35</text>
+  <circle cx="718" cy="567" r="17" fill="#edf1f4"/><text x="718" y="567" class="pin">34</text>
+  <circle cx="718" cy="606" r="17" fill="#edf1f4"/><text x="718" y="606" class="pin">33</text>
+  <circle cx="718" cy="645" r="17" fill="#edf1f4"/><text x="718" y="645" class="pin">32</text>
+
+  <text x="435" y="613" class="body leftlabel">GND</text>
+  <text x="435" y="652" class="body leftlabel" style="font-weight:750">GP6 — keep one probe here</text>
+  <text x="765" y="496" class="body" style="font-weight:750">3V3(OUT)</text>
+  <text x="765" y="339" class="small muted">40 = VBUS (do not probe)</text>
+  <text x="765" y="378" class="small muted">39 = VSYS (do not probe)</text>
+  <text x="765" y="456" class="small muted">37 = 3V3_EN (not 3V3)</text>
+
+  <rect x="40" y="710" width="550" height="138" rx="12" fill="#fff5e9" stroke="#d38a61" stroke-width="2"/>
+  <text x="62" y="747" class="head">A. GP6 → 3V3</text>
+  <text x="62" y="783" class="body">One meter probe: pin 9 GP6 (yellow)</text>
+  <text x="62" y="813" class="body">Other probe: pin 36 3V3(OUT) (orange)</text>
+
+  <rect x="610" y="710" width="550" height="138" rx="12" fill="#edf2f6" stroke="#8194a3" stroke-width="2"/>
+  <text x="632" y="747" class="head">B. GP6 → GND</text>
+  <text x="632" y="783" class="body">Keep one probe on pin 9 GP6 (yellow)</text>
+  <text x="632" y="813" class="body">Move other probe to pin 8 GND (grey)</text>
+
+  <text x="40" y="884" class="body">Meter on Ω/continuity. Record both readings with units (or “OL”); do not power on while measuring.</text>
+  <text x="40" y="913" class="small muted">Pico pins 8 and 9 are adjacent on the LEFT. Pin 36 is fifth from the TOP on the RIGHT.</text>
+</svg>

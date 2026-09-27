@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="960" viewBox="0 0 1200 960" role="img" aria-labelledby="title desc">
+<title id="title">Pico 2 → BC250: passive capture first</title><desc id="desc">Five passive wires. Pico physical pins 4 CS, 5 SCLK, 6 MOSI, 7 MISO, 8 ground. No VCC or GP6 connection; no BIOS chip modification.</desc>
+<style>text{font-family:system-ui,sans-serif;fill:#152433}.title{font-size:28px;font-weight:700}.head{font-size:21px;font-weight:650}.body{font-size:17px}.small{font-size:14px}.num{font-size:16px;font-weight:700;text-anchor:middle;dominant-baseline:central}</style>
+<rect width="1200" height="960" fill="#f7fafc"/>
+<text x="34" y="46" class="title" >Pico 2 → BC250: passive capture first</text>
+<text x="34" y="78" class="body" >Flash bc250_passive.uf2 with GPIO wires removed. Leave the BIOS chip soldered normally.</text>
+<rect x="32" y="106" width="1136" height="72" rx="10" fill="#fff1cd" stroke="#d0a449"/>
+<text x="50" y="135" class="head" >Only GND + four signal wires. USB powers the Pico; the BC250 uses its normal PSU.</text>
+<text x="50" y="160" class="body" >Leave J4004 VCC and Pico GP6 / 3V3 / VSYS / VBUS unconnected. Disconnect the Waveshare.</text>
+<rect x="40" y="202" width="390" height="503" rx="10" fill="#e2f2e8" stroke="#3d7656"/>
+<text x="63" y="235" class="head" >Pico 2 — component side up</text>
+<rect x="193" y="251" width="89" height="45" rx="10" fill="#c1cbd3" stroke="#52616e"/>
+<text x="237" y="280" class="body" text-anchor="middle">USB</text>
+<text x="65" y="320" class="small" >Physical pins, counting from top-left:</text>
+<circle cx="83" cy="351" r="13" fill="#edf1f4" stroke="#52616e"/>
+<text x="83" y="351" class="num" >1</text>
+<text x="113" y="357" class="body" >GP0</text>
+<circle cx="83" cy="385" r="13" fill="#edf1f4" stroke="#52616e"/>
+<text x="83" y="385" class="num" >2</text>
+<text x="113" y="391" class="body" >GP1</text>
+<circle cx="83" cy="419" r="13" fill="#edf1f4" stroke="#52616e"/>
+<text x="83" y="419" class="num" >3</text>
+<text x="113" y="425" class="body" >GND</text>
+<circle cx="83" cy="453" r="13" fill="#f4d35e" stroke="#52616e"/>
+<text x="83" y="453" class="num" >4</text>
+<text x="113" y="459" class="body" >GP2 → CS#</text>
+<circle cx="83" cy="487" r="13" fill="#6fdbbf" stroke="#52616e"/>
+<text x="83" y="487" class="num" >5</text>
+<text x="113" y="493" class="body" >GP3 → SCLK</text>
+<circle cx="83" cy="521" r="13" fill="#86c9f4" stroke="#52616e"/>
+<text x="83" y="521" class="num" >6</text>
+<text x="113" y="527" class="body" >GP4 → MOSI</text>
+<circle cx="83" cy="555" r="13" fill="#b2a4f4" stroke="#52616e"/>
+<text x="83" y="555" class="num" >7</text>
+<text x="113" y="561" class="body" >GP5 → MISO</text>
+<circle cx="83" cy="589" r="13" fill="#c1cbd3" stroke="#52616e"/>
+<text x="83" y="589" class="num" >8</text>
+<text x="113" y="595" class="body" >GND → GND</text>
+<circle cx="83" cy="623" r="13" fill="#edf1f4" stroke="#52616e"/>
+<text x="83" y="623" class="num" >9</text>
+<text x="113" y="629" class="body" >GP6 — leave unused</text>
+<text x="65" y="686" class="small" >Remaining header pins omitted from this drawing.</text>
+<text x="490" y="235" class="head" >J4004 — viewed from above the BC250</text>
+<text x="490" y="267" class="body" >Rotate so the white triangle is below the VCC corner.</text>
+<rect x="490" y="300" width="153" height="108" rx="10" fill="#c1cbd3" stroke="#52616e"/>
+<text x="566" y="337" class="head" text-anchor="middle">GND</text>
+<text x="566" y="376" class="body" text-anchor="middle">Pico pin 8</text>
+<rect x="659" y="300" width="153" height="108" rx="10" fill="#6fdbbf" stroke="#52616e"/>
+<text x="735" y="337" class="head" text-anchor="middle">SCLK</text>
+<text x="735" y="376" class="body" text-anchor="middle">Pico pin 5</text>
+<rect x="828" y="300" width="153" height="108" rx="10" fill="#86c9f4" stroke="#52616e"/>
+<text x="904" y="337" class="head" text-anchor="middle">MOSI</text>
+<text x="904" y="376" class="body" text-anchor="middle">Pico pin 6</text>
+<rect x="997" y="300" width="153" height="108" rx="10" fill="#edf1f4" stroke="#52616e"/>
+<text x="1073" y="337" class="head" text-anchor="middle">unused</text>
+<text x="1073" y="376" class="body" text-anchor="middle">no wire</text>
+<rect x="490" y="426" width="153" height="108" rx="10" fill="#edf1f4" stroke="#52616e"/>
+<text x="566" y="463" class="head" text-anchor="middle">VCC</text>
+<text x="566" y="502" class="body" text-anchor="middle">NO WIRE</text>
+<rect x="659" y="426" width="153" height="108" rx="10" fill="#f4d35e" stroke="#52616e"/>
+<text x="735" y="463" class="head" text-anchor="middle">CS#</text>
+<text x="735" y="502" class="body" text-anchor="middle">Pico pin 4</text>
+<rect x="828" y="426" width="153" height="108" rx="10" fill="#b2a4f4" stroke="#52616e"/>
+<text x="904" y="463" class="head" text-anchor="middle">MISO</text>
+<text x="904" y="502" class="body" text-anchor="middle">Pico pin 7</text>
+<rect x="997" y="426" width="153" height="108" rx="10" fill="#edf1f4" stroke="#52616e"/>
+<text x="1073" y="463" class="head" text-anchor="middle">absent</text>
+<text x="1073" y="502" class="body" text-anchor="middle">no pin</text>
+<path d="M550 569 L565 545 L580 569 Z" fill="white" stroke="#52616e" stroke-width="2"/>
+<text x="600" y="566" class="body" >White board triangle marks the VCC corner.</text>
+<text x="490" y="620" class="head" >Connect with both devices unplugged.</text>
+<text x="490" y="653" class="body" >Power Pico → arm capture → power BC250.</text>
+<text x="490" y="683" class="body" >Turn BC250 off before unplugging the Pico.</text>
+<rect x="32" y="736" width="1136" height="179" rx="10" fill="#eaf3fb" stroke="#81a9c8"/>
+<text x="50" y="769" class="head" >First check with the multimeter</text>
+<text x="50" y="802" class="body" >Check each jumper end-to-end and confirm the header orientation before applying power.</text>
+<text x="50" y="834" class="body" >Pico physical 4 / 5 / 6 / 7 / 8 = CS# / SCLK / MOSI / MISO / GND. No supply jumper.</text>
+<text x="50" y="866" class="body" >The later switch and 10 kΩ resistor are for isolating BIOS leg 1, after capture and bench tests.</text>
+<text x="50" y="894" class="small" >Full procedure: docs/pico2-wiring.md. Firmware pin contract: tools/pico2-interposer/pins.h.</text>
+</svg>

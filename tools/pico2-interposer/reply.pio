@@ -1,0 +1,36 @@
+; Bench only: one preloaded 32-bit reply per complete 03/address/data transfer.
+; No address lookup on the timing path. Actual commands are captured for checking.
+.program bench_reply
+.wrap_target
+    set pindirs, 0
+    pull block
+    set x, 31
+    wait 1 gpio 2
+    wait 0 gpio 2
+command_bit:
+    wait 1 gpio 3
+    in pins, 1
+    wait 0 gpio 3
+    jmp x-- command_bit
+    set x, 31
+    set pindirs, 1
+data_bit:
+    out pins, 1
+    wait 1 gpio 3
+    jmp x-- more_data
+    set pindirs, 0
+    wait 1 gpio 2
+    jmp 0
+more_data:
+    wait 0 gpio 3
+    jmp data_bit
+.wrap
+
+; Independent, higher-numbered SM releases MISO on CS# rising, including aborts.
+; A partial command still invalidates the script; this is not a live bus router.
+.program bench_release
+.wrap_target
+    wait 0 gpio 2
+    wait 1 gpio 2
+    set pindirs, 0
+.wrap

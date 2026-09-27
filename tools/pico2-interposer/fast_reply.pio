@@ -1,0 +1,39 @@
+; Experimental preselected single-flash response engine. ISOLATED MODEL ONLY.
+; The stock flash must already be deselected before the selected transaction.
+; GP5 starts high-Z, emits one 32-bit word, and returns high-Z at CS rise.
+; This engine does not validate the command or control flash CS; a separate
+; strict selector and abort path are required before any BC250 connection.
+.program fast_reply
+.side_set 1 opt pindirs
+.wrap_target
+start:
+    pull block side 0
+    wait 0 gpio 2
+    set x, 29
+command_bit:
+    wait 1 gpio 3
+    jmp x-- command_fall
+    ; The 30th address bit has been sampled. With the original flash already
+    ; deselected, emit the first bit two clocks early. The host does not sample
+    ; MISO until after the 32nd command/address clock.
+    out pins, 1 side 1
+    set x, 30
+    wait 0 gpio 3
+    wait 1 gpio 3
+    wait 0 gpio 3
+    wait 1 gpio 3
+    wait 0 gpio 3
+data_bit:
+    wait 1 gpio 3
+    out pins, 1 side 1
+    wait 0 gpio 3
+    jmp x-- data_bit
+    ; The final bit was set after the preceding rising edge. Keep OE on until
+    ; the host has sampled that final bit as well.
+    wait 1 gpio 3
+    wait 1 gpio 2 side 0
+    jmp start side 0
+command_fall:
+    wait 0 gpio 3
+    jmp command_bit
+.wrap

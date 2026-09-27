@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1100" viewBox="0 0 1200 1100" role="img" aria-labelledby="title desc">
+<title id="title">BC250 lifted BIOS CS with a movable connector instead of a switch</title>
+<desc id="desc">With power off, a short strain-relieved wire from the lifted BIOS flash pin 1 CS ends in one female socket. Move this socket to J4004 CS for stock boot, or to Pico 2 GP7 physical pin 10 for later PICO use. A permanent 10 kiloohm resistor connects lifted flash pin 1 to flash pin 8 board VCC. For later PICO use, Pico pins 4, 5, 6, 7 and 8 connect respectively to J4004 CS, SCLK, MOSI, MISO and GND; Pico USB goes to Pi 5. No VCC-to-Pico jumper. GP6 pin 9 unused. First boot in stock mode, with all Pico signal wires removed. Current Pico firmware is isolated-bench-only and cannot boot the BC250 in PICO mode.</desc>
+<style>text{font-family:system-ui,sans-serif;fill:#172a37}.title{font-size:30px;font-weight:750}.head{font-size:22px;font-weight:700}.body{font-size:18px}.small{font-size:15px}.row{font-size:19px;font-weight:650}.pin{font-size:16px;font-weight:750;text-anchor:middle;dominant-baseline:central}.center{text-anchor:middle}.muted{fill:#526676}</style>
+<rect width="1200" height="1100" fill="#f7fafc"/>
+<text x="30" y="49" class="title">BC250 BIOS CS# — one movable plug, no switch</text>
+<text x="30" y="79" class="body">The single socket on the lifted flash leg selects the original CS# or Pico GP7.</text>
+<rect x="30" y="101" width="1140" height="86" rx="11" fill="#fff0ca" stroke="#b78220" stroke-width="2"/>
+<text x="50" y="136" class="head">Move the plug only with BC250 PSU and Pico USB unplugged.</text>
+<text x="50" y="164" class="body">Waveshare disconnected. Find the chip’s real pin-1 dot; the package below is a top view only.</text>
+
+<rect x="30" y="210" width="1140" height="343" rx="12" fill="#fff" stroke="#b7c7d2" stroke-width="2"/>
+<text x="50" y="246" class="head">1  Lifted CS leg → thin wire → ONE female socket</text>
+<rect x="73" y="281" width="174" height="143" rx="8" fill="#dbe4ea" stroke="#607380" stroke-width="2"/>
+<circle cx="91" cy="300" r="7" fill="#263e4c"/><text x="111" y="307" class="small">pin-1 dot</text>
+<text x="160" y="361" class="body center">BIOS flash</text><text x="160" y="389" class="small center">top view</text>
+<path d="M73 320 H43" stroke="#657988" stroke-width="7"/><path d="M247 320 H277" stroke="#657988" stroke-width="7"/>
+<text x="40" y="304" class="row">1</text><text x="255" y="304" class="row">8</text>
+<text x="43" y="452" class="small">Pin 1 lifted clear of its old PCB pad.</text>
+<text x="43" y="478" class="small muted">Anchor the 30 AWG wire so the socket cannot tug the leg.</text>
+<path d="M43 320 H35 V499 H404" stroke="#d9a91b" stroke-width="5" fill="none"/>
+<circle cx="404" cy="499" r="7" fill="#d9a91b"/>
+<path d="M404 499 H485" stroke="#d9a91b" stroke-width="5"/>
+<rect x="485" y="481" width="91" height="36" rx="6" fill="#e8eff3" stroke="#526b7c" stroke-width="2"/>
+<rect x="497" y="489" width="67" height="20" rx="4" fill="#273f4c"/>
+<text x="530" y="543" class="small center">female socket</text>
+<path d="M277 320 H347 V382 H392" stroke="#b67b2c" stroke-width="4" fill="none"/>
+<rect x="392" y="365" width="92" height="34" rx="4" fill="#ffe5bd" stroke="#a66b24" stroke-width="2"/>
+<text x="438" y="388" class="small center">10 kΩ</text>
+<path d="M484 382 H548 V451 H404 V499" stroke="#b67b2c" stroke-width="4" fill="none"/>
+<text x="302" y="295" class="small muted">10 kΩ from flash pin 8 to CS#.</text>
+<text x="302" y="323" class="small muted">No Pico 3V3 wire.</text>
+<text x="638" y="289" class="head">Put that socket on ONE male pin:</text>
+<rect x="636" y="311" width="507" height="91" rx="10" fill="#fff3c4" stroke="#b58a16" stroke-width="2"/>
+<text x="658" y="345" class="head">STOCK → J4004 CS#</text>
+<text x="658" y="374" class="body">Restores lifted leg 1 to motherboard CS#.</text>
+<rect x="636" y="415" width="507" height="91" rx="10" fill="#e0f3f7" stroke="#29899e" stroke-width="2"/>
+<text x="658" y="449" class="head">PICO → Pico GP7 / physical pin 10</text>
+<text x="658" y="478" class="body">Only after active firmware is qualified.</text>
+<text x="638" y="531" class="small muted">In PICO, the original PCB pad and lifted leg remain separate.</text>
+
+<rect x="30" y="576" width="551" height="316" rx="12" fill="#e4f3e9" stroke="#4f8667" stroke-width="2"/>
+<text x="50" y="611" class="head">2  Pico 2 — USB at TOP</text>
+<text x="50" y="636" class="small muted">Labels face you; pin 1 top-left. Count down LEFT edge.</text>
+<rect x="56" y="652" width="32" height="222" rx="5" fill="#263b45"/>
+<circle cx="72" cy="669" r="15" fill="#f5d451"/><text x="72" y="669" class="pin">4</text><text x="109" y="677" class="row">GP2 → J4004 CS#</text>
+<circle cx="72" cy="700" r="15" fill="#75d4ae"/><text x="72" y="700" class="pin">5</text><text x="109" y="708" class="row">GP3 → J4004 SCLK</text>
+<circle cx="72" cy="731" r="15" fill="#85caf4"/><text x="72" y="731" class="pin">6</text><text x="109" y="739" class="row">GP4 → J4004 MOSI</text>
+<circle cx="72" cy="762" r="15" fill="#b5a3ef"/><text x="72" y="762" class="pin">7</text><text x="109" y="770" class="row">GP5 → J4004 MISO</text>
+<circle cx="72" cy="793" r="15" fill="#b9c6ce"/><text x="72" y="793" class="pin">8</text><text x="109" y="801" class="row">GND → J4004 GND</text>
+<circle cx="72" cy="824" r="15" fill="#fff" stroke="#8698a2"/><text x="72" y="824" class="pin">9</text><text x="109" y="832" class="row">GP6 → no wire</text>
+<circle cx="72" cy="855" r="15" fill="#80d5e4"/><text x="72" y="855" class="pin">10</text><text x="109" y="863" class="row">GP7 → movable socket in PICO</text>
+
+<rect x="602" y="576" width="568" height="316" rx="12" fill="#e9f2fa" stroke="#739abb" stroke-width="2"/>
+<text x="622" y="611" class="head">3  J4004 — BC250 component-side view</text>
+<text x="622" y="636" class="small muted">White PCB triangle below VCC corner.</text>
+<rect x="622" y="658" width="124" height="73" rx="7" fill="#c1ccd2" stroke="#657784"/><text x="684" y="687" class="row center">GND</text><text x="684" y="715" class="small center">Pico 8</text>
+<rect x="756" y="658" width="124" height="73" rx="7" fill="#bcebd9" stroke="#657784"/><text x="818" y="687" class="row center">SCLK</text><text x="818" y="715" class="small center">Pico 5</text>
+<rect x="890" y="658" width="124" height="73" rx="7" fill="#dceffd" stroke="#657784"/><text x="952" y="687" class="row center">MOSI</text><text x="952" y="715" class="small center">Pico 6</text>
+<rect x="1024" y="658" width="124" height="73" rx="7" fill="#edf1f4" stroke="#657784"/><text x="1086" y="687" class="row center">UNK</text><text x="1086" y="715" class="small center">no wire</text>
+<rect x="622" y="742" width="124" height="73" rx="7" fill="#fff0d6" stroke="#657784"/><text x="684" y="771" class="row center">VCC</text><text x="684" y="799" class="small center">NO Pico wire</text>
+<rect x="756" y="742" width="124" height="73" rx="7" fill="#fff4bf" stroke="#657784"/><text x="818" y="771" class="row center">CS#</text><text x="818" y="799" class="small center">Pico 4 / STOCK</text>
+<rect x="890" y="742" width="124" height="73" rx="7" fill="#eae2ff" stroke="#657784"/><text x="952" y="771" class="row center">MISO</text><text x="952" y="799" class="small center">Pico 7</text>
+<rect x="1024" y="742" width="124" height="73" rx="7" fill="#edf1f4" stroke="#657784"/><text x="1086" y="771" class="row center">absent</text><text x="1086" y="799" class="small center">no pin</text>
+<path d="M674 841 L684 820 L694 841 Z" fill="#fff" stroke="#657784" stroke-width="2"/>
+<text x="703" y="842" class="small">white triangle</text>
+<text x="622" y="874" class="small muted">STOCK uses the movable plug on J4004 CS#; remove Pico GPIO leads.</text>
+
+<rect x="30" y="912" width="1140" height="152" rx="12" fill="#fff" stroke="#b8c7d2" stroke-width="2"/>
+<text x="50" y="948" class="head">4  Unpowered meter checks, then first boot</text>
+<text x="50" y="979" class="body">Plug on J4004 CS#: lifted leg 1 ↔ J4004 CS# must have continuity. Unplug: no direct bridge to old pad.</text>
+<text x="50" y="1008" class="body">Check ~10 kΩ from lifted leg 1 to flash pin 8 VCC; inspect for bridges to pin 2 and nearby pads.</text>
+<text x="50" y="1041" class="row">First boot: plug into J4004 CS# (STOCK), remove all Pico signal wires, power BC250.</text>
+<text x="30" y="1094" class="small muted">Current Pico v0.6 image is an isolated bench test, not a BC250 boot image. Keep the connector short, insulated and strain-relieved.</text>
+</svg>
