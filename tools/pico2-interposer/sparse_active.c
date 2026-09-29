@@ -47,6 +47,15 @@ struct expected_run { uint32_t command, count; };
 struct patch_word { uint32_t command, reply; };
 #include "sparse_physical_profile.h"
 
+#ifdef PROFILE_POLICY_ONE_SHOT_ROW
+#ifndef PROFILE_POLICY_ONE_SHOT_COMMAND
+#define PROFILE_POLICY_ONE_SHOT_COMMAND 0x0398306cu
+#endif
+#ifndef PROFILE_POLICY_ONE_SHOT_REPLY
+#define PROFILE_POLICY_ONE_SHOT_REPLY 0u
+#endif
+#endif
+
 enum { FLASH_CS = 7u, SELECT_SM = 0u, WATCH_SM = 0u,
        PROBE_SM = 1u, SNAPSHOT_SM = 2u };
 enum { UNARMED, PASS_ONLY, ACTIVE };
@@ -70,6 +79,19 @@ static _Atomic uint32_t mode, fault_reason;
 static _Atomic uint32_t observed, matched, mismatches, completed,
                         would_patch, late_decisions, checksum, queued, verified,
                         flash_pad_high, flash_pad_low;
+#ifdef PROFILE_KEY_PATCH_FIRST_INDEX
+static _Atomic uint32_t queue_fault_row, queue_fault_command;
+#endif
+#ifdef PROFILE_DIAG_SPI
+/* TOS encodes two 32-bit words as four read addresses in the last MiB. */
+static _Atomic uint32_t diag_count, diag_commands[PROFILE_DIAG_CAPACITY];
+#ifdef PROFILE_EARLY_DIAG_VCN
+static _Atomic uint32_t mismatch_row, mismatch_expected, mismatch_observed;
+#endif
+#ifdef PROFILE_DIAG_MARKER
+static _Atomic uint32_t diag_total;
+#endif
+#endif
 
 static void __not_in_flash_func(fail_closed)(uint32_t reason) {
     if (atomic_load_explicit(&fault_reason, memory_order_acquire)) return;
@@ -84,6 +106,28 @@ static bool patch_word_for(uint32_t command, uint32_t row, uint32_t *reply) {
         !((address >= 0x9dad00u && address < 0x9dbad0u) ||
           (address >= 0x8eac00u && address < 0x8fef50u) ||
           (address >= 0x984f00u && address < 0x99f670u)
+#ifdef PROFILE_ALLOW_SEC_GASKET
+          || (address >= 0x982000u && address < 0x984e50u)
+#endif
+#ifdef PROFILE_POLICY_ONE_SHOT_ROW
+          || address == (PROFILE_POLICY_ONE_SHOT_COMMAND & 0xffffffu)
+#endif
+#ifdef PROFILE_POLICY_ONE_SHOT2_ROW
+          || address == (PROFILE_POLICY_ONE_SHOT2_COMMAND & 0xffffffu)
+#endif
+#ifdef PROFILE_ALLOW_ABL0_BODY_HOOK
+          || (address >= 0x99f700u && address < 0x99fa40u)
+#endif
+#ifdef PROFILE_ABL_BODY_START
+          || (address >= PROFILE_ABL_BODY_START && address < PROFILE_ABL_BODY_END)
+#endif
+#ifdef PROFILE_ALLOW_ABL_SIGNATURES
+          || (address >= 0x99fa40u && address < 0x99fb40u)
+          || (address >= 0x9ab9d0u && address < 0x9abad0u)
+          || (address >= 0x9af970u && address < 0x9afa70u)
+          || (address >= 0x9b9b60u && address < 0x9b9c60u)
+          || (address >= 0x9c3be0u && address < 0x9c3ce0u)
+#endif
 #ifdef PROFILE_TYPE51_HASH_ROW
           || (address >= 0x9dbda0u && address < 0x9dbef0u)
 #endif
@@ -95,6 +139,87 @@ static bool patch_word_for(uint32_t command, uint32_t row, uint32_t *reply) {
             row >= PROFILE_TYPE51_HASH_ROW)
 #endif
         ) return false;
+#ifdef PROFILE_POLICY_ONE_SHOT_ROW
+    /* Deliberately serve a different value for one of two SEC_GASKET reads.
+     * The other read and the stock signature pass through unchanged. */
+    if (command == PROFILE_POLICY_ONE_SHOT_COMMAND) {
+        if (row == PROFILE_POLICY_ONE_SHOT_ROW) {
+            *reply = PROFILE_POLICY_ONE_SHOT_REPLY;
+            return true;
+        }
+        return false;
+    }
+#endif
+#ifdef PROFILE_POLICY_ONE_SHOT2_ROW
+    if (command == PROFILE_POLICY_ONE_SHOT2_COMMAND) {
+        if (row == PROFILE_POLICY_ONE_SHOT2_ROW) {
+            *reply = PROFILE_POLICY_ONE_SHOT2_REPLY;
+            return true;
+        }
+        return false;
+    }
+#endif
+#ifdef PROFILE_KEY_PATCH_FIRST_INDEX
+    /* The first boot-profile patches are the 64 contiguous usage-42 key
+     * words. A direct lookup avoids a long binary search during the short
+     * inter-read gap at the start of a second PSP pass. */
+    if (address >= 0x9db290u && address < 0x9db390u) {
+        uint index = PROFILE_KEY_PATCH_FIRST_INDEX + (address - 0x9db290u) / 4u;
+        if (patch_words[index].command == command) {
+            *reply = patch_words[index].reply;
+            return true;
+        }
+        return false;
+    }
+#endif
+#ifdef PROFILE_KEY31_PATCH_FIRST_INDEX
+    if (address >= 0x9db530u && address < 0x9db630u) {
+        uint index = PROFILE_KEY31_PATCH_FIRST_INDEX + (address - 0x9db530u) / 4u;
+        if (patch_words[index].command == command) {
+            *reply = patch_words[index].reply;
+            return true;
+        }
+        return false;
+    }
+#endif
+#ifdef PROFILE_POLICY_SIG_PATCH_FIRST_INDEX
+    if (address >= 0x984d50u && address < 0x984e50u) {
+        uint index = PROFILE_POLICY_SIG_PATCH_FIRST_INDEX + (address - 0x984d50u) / 4u;
+        if (patch_words[index].command == command) {
+            *reply = patch_words[index].reply;
+            return true;
+        }
+        return false;
+    }
+#endif
+#ifdef PROFILE_ABL_SIG0_PATCH_FIRST_INDEX
+#define DIRECT_ABL_SIGNATURE(BASE, END, FIRST)                                 \
+    if (address >= (BASE) && address < (END)) {                                \
+        uint index = (FIRST) + (address - (BASE)) / 4u;                        \
+        if (patch_words[index].command == command) {                           \
+            *reply = patch_words[index].reply;                                \
+            return true;                                                       \
+        }                                                                      \
+        return false;                                                          \
+    }
+    DIRECT_ABL_SIGNATURE(0x99fa40u, 0x99fb40u, PROFILE_ABL_SIG0_PATCH_FIRST_INDEX)
+    DIRECT_ABL_SIGNATURE(0x9ab9d0u, 0x9abad0u, PROFILE_ABL_SIG1_PATCH_FIRST_INDEX)
+    DIRECT_ABL_SIGNATURE(0x9af970u, 0x9afa70u, PROFILE_ABL_SIG2_PATCH_FIRST_INDEX)
+    DIRECT_ABL_SIGNATURE(0x9b9b60u, 0x9b9c60u, PROFILE_ABL_SIG3_PATCH_FIRST_INDEX)
+    DIRECT_ABL_SIGNATURE(0x9c3be0u, 0x9c3ce0u, PROFILE_ABL_SIG4_PATCH_FIRST_INDEX)
+#undef DIRECT_ABL_SIGNATURE
+#endif
+#ifdef PROFILE_ABL_BODY_LOOKUP_WORDS
+    if (address >= PROFILE_ABL_BODY_START && address < PROFILE_ABL_BODY_END) {
+        uint16_t slot = profile_abl_body_lookup[
+            (address - PROFILE_ABL_BODY_START) / 4u];
+        if (slot && patch_words[slot - 1u].command == command) {
+            *reply = patch_words[slot - 1u].reply;
+            return true;
+        }
+        return false;
+    }
+#endif
     uint lo = 0u, hi = PROFILE_CHANGED_WORDS;
     while (lo < hi) {
         uint mid = lo + (hi - lo) / 2u;
@@ -112,6 +237,9 @@ static void __not_in_flash_func(profile_worker)(void) {
     uint32_t pending_command = 0u;
     bool tracking = false;
     bool pending = false;
+#ifdef PROFILE_EARLY_DIAG_VCN
+    bool early_sampled = false;
+#endif
     for (;;) {
         if (atomic_load_explicit(&mode, memory_order_relaxed) == ACTIVE &&
             !atomic_load_explicit(&fault_reason, memory_order_relaxed)) {
@@ -126,6 +254,36 @@ static void __not_in_flash_func(profile_worker)(void) {
         }
         uint32_t command = watch_pio->rxf[WATCH_SM];
         atomic_fetch_add_explicit(&observed, 1u, memory_order_relaxed);
+#ifdef PROFILE_DIAG_SPI
+#ifndef PROFILE_EARLY_DIAG_VCN
+        if (!tracking && atomic_load_explicit(&completed, memory_order_relaxed) &&
+            (command & 0xfff00000u) == 0x03c00000u) {
+#ifdef PROFILE_DIAG_MARKER
+            static uint32_t diag_stage;
+            atomic_fetch_add_explicit(&diag_total, 1u, memory_order_relaxed);
+            if (!atomic_load_explicit(&diag_count, memory_order_relaxed)) {
+                if (command == PROFILE_DIAG_MARKER) {
+                    diag_stage = 1u;
+                } else if (diag_stage >= 1u && diag_stage <= 4u &&
+                           ((command - 0x03c00000u) >> 18) == diag_stage - 1u) {
+                    atomic_store_explicit(&diag_commands[diag_stage - 1u], command,
+                                          memory_order_relaxed);
+                    if (++diag_stage == 5u)
+                        atomic_store_explicit(&diag_count, 4u, memory_order_release);
+                } else {
+                    diag_stage = 0u;
+                }
+            }
+#else
+            uint32_t slot = atomic_fetch_add_explicit(&diag_count, 1u,
+                                                       memory_order_relaxed);
+            if (slot < PROFILE_DIAG_CAPACITY)
+                atomic_store_explicit(&diag_commands[slot], command,
+                                      memory_order_relaxed);
+#endif
+        }
+#endif
+#endif
         if (pending) {
             if (command == pending_command) {
                 atomic_fetch_add_explicit(&verified, 1u, memory_order_relaxed);
@@ -144,14 +302,55 @@ static void __not_in_flash_func(profile_worker)(void) {
             previous = command;
             continue;
         }
+#ifdef PROFILE_EARLY_DIAG_MARKER
+        /* One exact ABL-stage flash read is allowed between profile words.
+         * It is evidence only: it never changes the expected row or reply. */
+        if (tracking && !pending && command == PROFILE_EARLY_DIAG_MARKER) {
+            uint32_t slot = atomic_fetch_add_explicit(&diag_count, 1u,
+                                                       memory_order_relaxed);
+            if (slot < PROFILE_DIAG_CAPACITY)
+                atomic_store_explicit(&diag_commands[slot], command,
+                                      memory_order_relaxed);
+            previous2 = previous;
+            previous = command;
+            continue;
+        }
+#endif
+#ifdef PROFILE_EARLY_DIAG_VCN
+        /* One pinned ABL-entry low-16-bit sample may interrupt the next run. */
+#ifndef PROFILE_EARLY_DIAG_ROW
+#define PROFILE_EARLY_DIAG_ROW 139072u
+#endif
+        if (tracking && !pending && !early_sampled && row == PROFILE_EARLY_DIAG_ROW &&
+            command >= 0x03c40000u && command <= 0x03c7fffcu &&
+            (command & 3u) == 0u) {
+            uint32_t slot = atomic_fetch_add_explicit(&diag_count, 1u,
+                                                       memory_order_relaxed);
+            if (slot < PROFILE_DIAG_CAPACITY)
+                atomic_store_explicit(&diag_commands[slot], command,
+                                      memory_order_relaxed);
+            early_sampled = true;
+            previous2 = previous;
+            previous = command;
+            continue;
+        }
+#endif
         if (!tracking && previous2 == 0x039db038u &&
             previous == 0x039db03cu && command == 0x039db040u) {
             tracking = true;
             run = offset = row = 0u;
+#ifdef PROFILE_EARLY_DIAG_VCN
+            early_sampled = false;
+#endif
         }
         if (tracking) {
             uint32_t expected = expected_runs[run].command + 4u * offset;
             if (command != expected) {
+#ifdef PROFILE_EARLY_DIAG_VCN
+                atomic_store_explicit(&mismatch_row, row, memory_order_relaxed);
+                atomic_store_explicit(&mismatch_expected, expected, memory_order_relaxed);
+                atomic_store_explicit(&mismatch_observed, command, memory_order_relaxed);
+#endif
                 atomic_fetch_add_explicit(&mismatches, 1u, memory_order_relaxed);
                 tracking = false;
                 if (atomic_load_explicit(&mode, memory_order_relaxed) == ACTIVE)
@@ -176,6 +375,10 @@ static void __not_in_flash_func(profile_worker)(void) {
                             atomic_fetch_add_explicit(&late_decisions, 1u, memory_order_relaxed);
                         if (atomic_load_explicit(&mode, memory_order_relaxed) == ACTIVE) {
                             if (gpio_get(BC250_CS)) {
+#ifdef PROFILE_KEY_PATCH_FIRST_INDEX
+                                atomic_store_explicit(&queue_fault_row, row, memory_order_relaxed);
+                                atomic_store_explicit(&queue_fault_command, next, memory_order_relaxed);
+#endif
                                 fail_closed(LATE_QUEUE_FAULT);
                             } else if (pio_sm_get_tx_fifo_level(selector_pio, SELECT_SM)) {
                                 fail_closed(TX_FIFO_FAULT);
@@ -183,9 +386,13 @@ static void __not_in_flash_func(profile_worker)(void) {
                                 selector_pio->txf[SELECT_SM] = 1u;
                                 selector_pio->txf[SELECT_SM] = next;
                                 selector_pio->txf[SELECT_SM] = reply;
-                                if (gpio_get(BC250_CS))
+                                if (gpio_get(BC250_CS)) {
+#ifdef PROFILE_KEY_PATCH_FIRST_INDEX
+                                    atomic_store_explicit(&queue_fault_row, row, memory_order_relaxed);
+                                    atomic_store_explicit(&queue_fault_command, next, memory_order_relaxed);
+#endif
                                     fail_closed(LATE_QUEUE_FAULT);
-                                else {
+                                } else {
                                     pending = true;
                                     pending_command = next;
                                     atomic_fetch_add_explicit(&queued, 1u, memory_order_relaxed);
@@ -236,6 +443,31 @@ static void __not_in_flash_func(profile_worker)(void) {
 
 static void status(void) {
     uint32_t stall = (watch_pio->fdebug >> (PIO_FDEBUG_RXSTALL_LSB + WATCH_SM)) & 1u;
+#ifdef PROFILE_DIAG_SPI
+#ifdef PROFILE_DIAG_MARKER
+    printf("diag_total=%" PRIu32 " ",
+           atomic_load_explicit(&diag_total, memory_order_relaxed));
+#endif
+    printf("diag_count=%" PRIu32 " diag0=%08" PRIx32 " diag1=%08" PRIx32
+           " diag2=%08" PRIx32 " diag3=%08" PRIx32 " ",
+           atomic_load_explicit(&diag_count, memory_order_relaxed),
+           atomic_load_explicit(&diag_commands[0], memory_order_relaxed),
+           atomic_load_explicit(&diag_commands[1], memory_order_relaxed),
+           atomic_load_explicit(&diag_commands[2], memory_order_relaxed),
+           atomic_load_explicit(&diag_commands[3], memory_order_relaxed));
+#ifdef PROFILE_EARLY_DIAG_VCN
+    printf("mismatch_row=%" PRIu32 " mismatch_expected=%08" PRIx32
+           " mismatch_observed=%08" PRIx32 " ",
+           atomic_load_explicit(&mismatch_row, memory_order_relaxed),
+           atomic_load_explicit(&mismatch_expected, memory_order_relaxed),
+           atomic_load_explicit(&mismatch_observed, memory_order_relaxed));
+#endif
+#endif
+#ifdef PROFILE_KEY_PATCH_FIRST_INDEX
+    printf("queue_fault_row=%" PRIu32 " queue_fault_command=%08" PRIx32 " ",
+           atomic_load_explicit(&queue_fault_row, memory_order_relaxed),
+           atomic_load_explicit(&queue_fault_command, memory_order_relaxed));
+#endif
 #ifdef BC250_MISO_PROBE
     if (!probe_ready && !pio_sm_is_rx_fifo_empty(watch_pio, PROBE_SM)) {
         probe_reply = watch_pio->rxf[PROBE_SM];
@@ -289,6 +521,18 @@ static void status(void) {
 static void command(const char *line) {
     if (!strcmp(line, "status")) {
         status();
+#ifdef PROFILE_DIAG_SPI
+    } else if (!strcmp(line, "diag-dump")) {
+        uint32_t count = atomic_load_explicit(&diag_count, memory_order_acquire);
+        uint32_t stored = count < PROFILE_DIAG_CAPACITY ? count : PROFILE_DIAG_CAPACITY;
+        printf("DIAG count=%" PRIu32 " stored=%" PRIu32 "\n", count, stored);
+        for (uint32_t i = 0; i < stored; ++i)
+            printf("%08" PRIx32 "%c",
+                   atomic_load_explicit(&diag_commands[i], memory_order_relaxed),
+                   (i & 15u) == 15u ? '\n' : ' ');
+        if (stored & 15u) printf("\n");
+        printf("DIAG-END\n");
+#endif
 #ifdef BC250_BUS_SNAPSHOT
     } else if (!strcmp(line, "snapshot")) {
         if (!atomic_load_explicit(&snapshot_armed, memory_order_acquire) ||
@@ -337,7 +581,7 @@ static void command(const char *line) {
         fail_closed(PROFILE_FAULT);
         printf("CANCELLED output=OFF\n");
     } else {
-        printf("ERROR status; arm-pass; arm-active; cancel\n");
+        printf("ERROR status; arm-pass; arm-active; cancel; diag-dump\n");
     }
     stdio_flush();
 }

@@ -1,0 +1,28 @@
+; Input-only one-shot capture of the next 64-byte READ03 reply. Core1
+; enables this SM immediately after the selector completes the prior reply.
+; GP4 is the IN base and GP5 MISO is the second bit of each sample pair.
+; No board pin is driven by this SM.
+.program burst_wire_capture
+.wrap_target
+    wait 1 gpio 2
+    wait 0 gpio 2
+    set x, 31
+command_bit:
+    wait 1 gpio 3
+    wait 0 gpio 3
+    jmp x-- command_bit
+    set x, 31
+word:
+    set y, 15
+data_pair:
+    wait 1 gpio 3
+    in pins, 2
+    wait 0 gpio 3
+    jmp y-- data_pair
+    push block
+    jmp x-- word
+    wait 1 gpio 2
+    irq set 1
+done:
+    jmp done
+.wrap

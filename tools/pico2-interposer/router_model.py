@@ -127,7 +127,8 @@ def encode(rows, labels):
 
 class SM:
     def __init__(self, program, fifo=None, *, in_base=4, in_count=32,
-                 jmp_pin=2, in_autopush=False):
+                 jmp_pin=2, in_autopush=False, out_autopull=False,
+                 out_threshold=32):
         self.code = [int(i['hex'], 16) for i in program['instructions']]
         self.wrap, self.start = program['wrap'], program['wrapTarget']
         self.pc = self.x = self.y = self.isr = self.osr = self.delay = 0
@@ -137,6 +138,9 @@ class SM:
         self.enabled = True
         self.in_base, self.in_count, self.jmp_pin = in_base, in_count, jmp_pin
         self.in_autopush, self.in_bits = in_autopush, 0
+        # RP2350 resets the OSR shift count to 32 (empty).  In particular, an
+        # explicit PULL with autopull enabled does not replace a full OSR.
+        self.out_autopull, self.out_threshold, self.out_bits = out_autopull, out_threshold, 32
         self.sideset = program['sideset'] is not None
         self.rx = []
 
@@ -150,6 +154,12 @@ class SM:
         injected = self.inject is not None
         ins = self.inject if injected else self.code[self.pc]
         self.inject = None
+        # Autopull may fetch on any non-OUT cycle as soon as the OSR is empty.
+        # This matters to PULL, which becomes a barrier rather than an
+        # unconditional replacement when autopull has filled the OSR.
+        if self.out_autopull and self.out_bits >= self.out_threshold and self.fifo and ins >> 13 != 3:
+            self.osr = self.fifo.popleft()
+            self.out_bits = 0
         if self.sideset and ins & 0x1000:
             change['oe'] = (ins >> 11) & 1
         if self.irq_wait is not None:
@@ -176,6 +186,8 @@ class SM:
                 take, self.y = self.y != 0, (self.y - 1) & 0xffffffff
             elif arg == 6:
                 take = bool(pins & (1 << self.jmp_pin))
+            elif arg == 7:
+                take = self.out_bits < self.out_threshold
             else:
                 raise AssertionError(('JMP', arg))
             if take:
@@ -196,33 +208,49 @@ class SM:
                     self.isr = self.in_bits = 0
         elif op == 3:
             n = value or 32
+            if self.out_autopull and self.out_bits >= self.out_threshold:
+                if not self.fifo:
+                    return change
+                self.osr = self.fifo.popleft()
+                self.out_bits = 0
             out = self.osr >> (32 - n)
             self.osr = (self.osr << n) & 0xffffffff
+            self.out_bits = min(32, self.out_bits + n)
             if arg == 0 and n == 1:
                 change['data'] = out
+            elif arg == 3:
+                pass  # OUT NULL discards the current OSR word.
             elif arg == 7 and n == 16:
                 self.inject = out  # OUT EXEC takes a separate execution cycle
             else:
                 raise AssertionError(('OUT', arg, n))
+            if self.out_autopull and self.out_bits >= self.out_threshold and self.fifo:
+                self.osr = self.fifo.popleft()
+                self.out_bits = 0
         elif op == 4:
             if (ins & 0xe0ff) == 0x8020:
                 self.rx.append(self.isr)
                 self.isr = 0
             elif (ins & 0xe0ff) == 0x8080:
                 # PULL NOBLOCK copies X into OSR when the TX FIFO is empty.
-                self.osr = self.fifo.popleft() if self.fifo else self.x
+                if not self.out_autopull or self.out_bits >= self.out_threshold:
+                    self.osr = self.fifo.popleft() if self.fifo else self.x
+                    self.out_bits = 0
             else:
                 if (ins & 0xe0ff) != 0x80a0:
                     raise AssertionError('only PUSH/PULL BLOCK modeled')
-                if not self.fifo:
-                    return change
-                self.osr = self.fifo.popleft()
+                if not self.out_autopull or self.out_bits >= self.out_threshold:
+                    if not self.fifo:
+                        return change
+                    self.osr = self.fifo.popleft()
+                    self.out_bits = 0
         elif op == 5:
             operation = (ins >> 3) & 3
             if operation not in (0, 1):
                 raise AssertionError('MOV operation')
             source = {0: (pins >> self.in_base) & ((1 << self.in_count) - 1),
-                      2: self.y, 3: 0, 6: self.isr, 7: self.osr}[ins & 7]
+                      1: self.x, 2: self.y, 3: 0, 6: self.isr,
+                      7: self.osr}[ins & 7]
             if operation:
                 source ^= 0xffffffff
             if arg == 1:
@@ -231,6 +259,9 @@ class SM:
                 self.y = source
             elif arg == 6:
                 self.isr = source
+            elif arg == 7:
+                self.osr = source
+                self.out_bits = 0
             else:
                 raise AssertionError(('MOV', arg))
         elif op == 6:

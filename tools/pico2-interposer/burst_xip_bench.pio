@@ -1,0 +1,48 @@
+; Isolated on-chip XIP throughput probe. The only output pins are unwired
+; GP8 (MISO) and GP12 (simulated flash CS#). The SPI1 master generates CS#
+; on GP9, SCK on GP10 and MOSI on GP11. GP2/GP7 are handled by the separate
+; original-flash pass-through PIO; this program never touches those pins.
+; Keep the selector instruction sequence identical to burst_match_late_od.pio
+; except for the GPIO numbers, so its reply timing is representative.
+.program burst_xip_bench
+.side_set 1 opt pindirs
+    pull block
+    mov x, osr
+    out null, 32
+.wrap_target
+start:
+    set pindirs, 0 side 0
+    wait 1 gpio 9
+    wait 0 gpio 9
+    set pindirs, 1 side 0
+    set y, 30
+command_bit:
+    wait 1 gpio 10
+    in pins, 1
+    jmp y-- command_fall
+    mov y, isr
+    jmp x!=y pass
+    set pindirs, 0 side 0 [3]
+    wait 0 gpio 10
+    wait 1 gpio 10
+    jmp pin fault
+    out pins, 1 side 1
+    wait 0 gpio 10
+data_bit:
+    wait 1 gpio 10
+    wait 0 gpio 10
+    out pins, 1 side 1
+    jmp !osre data_bit
+    wait 1 gpio 9 side 1
+    irq set 1 side 0
+    mov x, ~null side 0
+    jmp start
+command_fall:
+    wait 0 gpio 10
+    jmp command_bit
+fault:
+    irq wait 0
+pass:
+    wait 1 gpio 9
+    jmp start
+.wrap

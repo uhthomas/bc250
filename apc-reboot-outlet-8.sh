@@ -5,10 +5,11 @@ set -euo pipefail
 
 usage() {
     cat <<'HELP'
-Usage: ./apc-reboot-outlet-8.sh [--status]
+Usage: ./apc-reboot-outlet-8.sh [--status|--off|--on]
 
 With no arguments, immediately power-cycle outlet 8 on the discovered APC PDU.
 --status checks login, outlet status and grouping without changing power.
+--off and --on set outlet 8 explicitly for isolated recovery trials.
 Requires OpenSSH and Expect. Defaults: APC_HOST=192.168.0.53,
 APC_USERNAME=apc, APC_PASSWORD=apc (all overridable environment variables).
 The SSH host key is pinned to the discovered PDU, even if its IP changes.
@@ -22,6 +23,8 @@ fi
 case "${1-}" in
     '') export APC_ACTION=reboot ;;
     --status) export APC_ACTION=status ;;
+    --off) export APC_ACTION=off ;;
+    --on) export APC_ACTION=on ;;
     --help|-h) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
 esac
@@ -110,6 +113,12 @@ puts "Outlet grouping: disabled"
 if {$env(APC_ACTION) eq "reboot"} {
     command "olReboot 8"
     puts "Outlet 8 reboot accepted by the PDU."
+} elseif {$env(APC_ACTION) eq "off"} {
+    command "olOff 8"
+    puts "Outlet 8 off accepted by the PDU."
+} elseif {$env(APC_ACTION) eq "on"} {
+    command "olOn 8"
+    puts "Outlet 8 on accepted by the PDU."
 } else {
     puts "Status check complete; no power changes made."
 }

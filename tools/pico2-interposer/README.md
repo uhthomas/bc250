@@ -1,5 +1,214 @@
 # BC250 Pico 2 implementation
 
+**Current board state, 2026-09-29 after delayed VCN diagnostics:** Signed
+RAM-only pre-map hooks confirmed that all sixteen PSP-visible VCPU cache
+window words and all three MPC muxes retained their full 32-bit programmed
+values across one full VCPU wait, before any second-call replay. Separate
+delayed reads found the PSP soft-reset low 28 bits still zero and the MPC
+replacement-mode low 28 bits at `0x10`.
+An attempted PSP read mapping of the firmware TMR and a matched
+bookkeeping-address control both returned low 28 result bits `0xf`, so
+that probe cannot establish whether firmware bytes reached the VCPU.
+VCPU-ready remained absent and no frame decoded;
+`CC_UVD_HARVESTING=3` is an availability clue, not a proven start command.
+BC250 is on normal Fedora boot
+`e8d08497-33f8-4f87-befb-d26a04cd0d98` with `amdgpu` bound, `/boot`
+read-only and no diagnostic GRUB entry. Pico CS-PASS v2 is armed in SRAM,
+the Pi recovery timer is stopped, and neither BIOS EEPROM nor Pico QSPI
+was written. See [the investigation](../../docs/video-decode-next-step.md).
+
+**Earlier combined policy trial, 2026-09-29:** An early Trusted-OS client-12
+`SEC_GASKET` replay latched the descriptor readback, but a combined early
+and late policy VCN trial still left powered VCN harvest at `3`, host
+firmware-cache/reset reads at `ffffffff`, VCPU PC at zero and the decode
+ring timed out. The Pico verified 1,558/1,558 RAM-only substitutions with
+zero faults across two firmware passes. The board has been returned to
+CS-PASS v2 in Pico SRAM and normal Fedora boot
+`2913c705-d2be-451f-bc7b-700bf057c4f3`, with `amdgpu` bound and the Pi
+PDU timer stopped. See [the investigation](../../docs/video-decode-next-step.md).
+No BIOS EEPROM or Pico QSPI flash was written; no decoded frame exists.
+
+**Earlier retarget cross-check, 2026-09-28:** With the first signed
+`SEC_GASKET` tuple redirected from
+`0x1f820 <- 0x185103` to `0x1f81c <- 0` in Pico RAM, the ABL0 policy read
+hook measured `0x1f820=0` on both boot passes. The Pico verified 1,398/1,398
+substitutions, fault 0, and Fedora booted normally as
+`2c11882a-1254-4608-b325-a4d2092a71fd`. The corresponding harvest-read
+trial still measured `CC_UVD_HARVESTING=3`, and VA-API still fails. This
+narrows the early policy effect but does not identify the harvest source.
+The Pi 5 was restarted after the capture at the user's request; the Pico
+returned to passive mode and CS-PASS v2 was loaded into RAM and armed. The
+BC250 remained running. See [the investigation](../../docs/video-decode-next-step.md).
+No BIOS EEPROM or Pico QSPI was written.
+
+**Earlier VCN investigation, 2026-09-28:** The Pi 5 was restarted and
+the Pico recovered. A RAM-only first-read substitution of the signed
+`SEC_GASKET` policy value `0x1f820 <- 0x185103` changed ABL0's readback to
+zero while leaving the policy signature and verification read stock. Fedora
+booted. The same method changed the adjacent `0x1f8a4` value to zero, but
+`CC_UVD_HARVESTING` stayed `3` at ABL0 when either value or both values were
+zero. Retargeting the early tuple to `0x1f81c <- 0` also left harvest at `3`.
+The pinned `--set-1f8a4-f` option instead applies the Steam Deck's single
+different bit on the first BC250 read. ABL0 accepted `0xf`, but the paired
+readback still measured `CC_UVD_HARVESTING=3`; see
+[`video-decode-next-step.md`](../../docs/video-decode-next-step.md).
+An authenticated Deck/Cezanne hybrid then changed seven early gasket rows,
+added two Deck rows, and retained the four Cezanne windows needed for the
+BC250 VCN aperture. It booted and verified every Pico substitution, but VCPU
+still did not report ready. The [generator](prepare_deck_gasket_hybrid.py)
+and [evidence](../../docs/video-decode-next-step.md) record that RAM-only trial.
+The current Pico image is the RAM-only
+`policy-first-read-1f81c-zero-harvest` profile; it completed both boot passes
+with 1,398/1,398 substitutions, fault 0, and Fedora is running on boot
+`f9a9e050-19a0-407f-989c-afa13fd33cfa`. VA-API still fails; no VCN frame
+has decoded. See [the investigation](../../docs/video-decode-next-step.md).
+No BIOS EEPROM or Pico QSPI payload was written.
+
+**Earlier ABL fabric investigation, 2026-09-28:** RAM-only signed hooks measured
+PSP-aperture `0x50d6c` low 16 bits as `0xc0` at ABL0–ABL3 entry and `0xf0`
+at ABL3 exit. Full-value guarded bit-11 writes at ABL3 entry and exit read
+back the original values (`0xc0` and `0xf0`) immediately. Both trials
+completed two Pico passes with all substitutions verified, zero faults and
+healthy Fedora boots. That Pico image was the RAM-only
+`abl3-entry-fabric-toggle-entry` profile, armed with MISO input-only between
+reads. The actual VCN harvest value was already `3` at ABL0 entry; these
+fabric observations do not establish its cause. VA-API still fails and no
+frame has been decoded. See [the investigation](../../docs/video-decode-next-step.md).
+Neither BIOS EEPROM nor Pico QSPI payload was written.
+
+**Earlier ABL0 result, 2026-09-28:** The signed RAM-only ABL0-entry
+[read hook](abl0-entry-harvest.S) measured `CC_UVD_HARVESTING=3` on both
+boot passes. A separate [guarded write hook](abl0-entry-harvest-clear.S)
+required that exact full register value, wrote volatile zero through the
+PSP SMN aperture, and read back `3` on both passes. The Pico verified all
+1,396 substitutions without fault; Fedora is running on boot
+`3e02c592-beaa-437d-93ef-ac8b06ee3fe4`. This test rules out the attempted ABL0 write path, but does
+not establish whether the value comes from an earlier stage, a hardware
+latch or a fuse. No BIOS EEPROM or Pico QSPI payload was written, and no
+VCN-decoded frame exists. See [the investigation](../../docs/video-decode-next-step.md).
+
+**VCN fabric timing, 2026-09-28:** A first-TOS read measured `0x50d6c=f0`
+and `CC_UVD_HARVESTING=3`, while a core-mask control was `0x77` then `0xff`
+on the same boot. A guarded RAM-only write of `0x8f0` to `0x50d6c` read back
+`f0`; the hook restored/verified `f0`, and Fedora booted. See
+[the investigation](../../docs/video-decode-next-step.md). No BIOS or Pico
+QSPI payload was written.
+
+**Pi 5 recovery, 2026-09-28:** Rebooting the Pi restored its USB controller
+while the BC250 remained running. The Pico then enumerated on `/dev/ttyACM0`
+in its QSPI `BC250-PICO2-PASSIVE v1` image with all outputs off. Because the
+BIOS chip's CS# leg is lifted, restore and arm the RAM-only CS relay with
+`python3 /home/pi/load_and_arm_cs_pass.py --uf2 /home/pi/bc250_cs_pass_v02.uf2`
+before any BC250 cold boot. The observed post-arm status was
+`BC250-PICO2-CS-PASS v2 armed=1 gate=1 host_cs=1 miso=INPUT`; the same Fedora
+boot stayed healthy. A Pi restart alone does not leave the next BC250 boot
+ready.
+
+**Earlier VCN policy result, 2026-09-28:** The first-TOS direct-aperture read found
+`0x1f820=0x185103`, `0x1f8a4=0xb` and `CC_UVD_HARVESTING (0x1f81c)=3`.
+A guarded RAM-only hook temporarily cleared both policy words and read them
+back as zero, yet a zero write to harvest still read back `3`. It restored
+the policy words, and Fedora booted with every Pico substitution verified.
+An earlier core-mask control changed from `0x77` at TOS entry to `0xff` after
+boot, validating that the aperture was live. The [marked IPL slice hook](tos-entry-ipl-slice.S)
+now distinguishes its encoded reads from ordinary BIOS reads. Two bounded
+8 KiB reads reached Fedora and identify `0x54000..0x58fff` as AGESA ABL
+material, not the earlier PSP bootloader. The Pi 5 was restarted and the Pico
+returned to RAM-only CS-PASS v2. Details are in
+[the VCN investigation](../../docs/video-decode-next-step.md). No BIOS or
+Pico QSPI payload write, and no decoded frame.
+
+**Earlier DF-lock result, 2026-09-28:** The [early-CS-release selector](burst_match_early_od.pio)
+served both full 20,727-read UEFI passes from an exact-original QSPI control
+and booted Fedora. Its final [DF-lock stream candidate](df_lock_stream_control.c)
+trial also completed both passes (41,454/41,454 reads, `fault=0`, maximum
+rearm 162 Pico cycles). The 1,327,104-byte candidate payload was independently
+read back from Pico QSPI; one input-only 64-byte second-pass MISO sample
+matched all expected words. Fedora booted, but AMDGPU detected no VCN block
+and VA-API could not initialize. Post-boot root-SMN `0x50d6c` remained `0xf0`.
+The candidate is not a hardware-decoding fix and must not be written to BIOS.
+The Pi 5 restart recovered Pico USB during restoration; the known CS-PASS v2
+RAM image is armed with MISO input-only, and original-BIOS Fedora is healthy
+on boot `f695bd15-ce10-4b19-98b8-4fd3b37ca543`. The BIOS EEPROM was not
+written. The older late-release selector's one-pass failure is described in
+[the full note](../../docs/df-lock-control-20260928.md).
+
+**Earlier consecutive original-byte control, 2026-09-28:** The RAM-only
+[on-chip rearm bench](burst_rearm_bench.c) returned all 16,384 words of 1,024
+sequential 64-byte reads from uncached Pico flash at 34 MHz and a separately
+measured 1,070 ns CS# high gap; core1 rearm took at most 52 Pico cycles.
+The [board control](burst_sequence_control.c), using 16 private original-ROM
+replies generated by [this pinned generator](prepare_original_burst_sequence.py),
+then completed **16/16** handoffs during each of two separately armed BC250
+PDU boots. Fault, DMA remainder and FIFO remainder were zero; longest rearms
+were 133 and 137 cycles, and Fedora returned after both. An intervening boot
+used only the control's original-flash fallback.
+No Pico or BIOS flash write occurred. See [the full note](../../docs/df-lock-control-20260928.md).
+
+**Earlier onboard-flash source and BC250 burst gap, 2026-09-28:** The RAM-only
+[XIP self-benchmark](burst_xip_bench.c) served and captured 1,000/1,000
+nonzero 64-byte replies from the Pico's uncached onboard flash at an actual
+34 MHz. An earlier apparent 42.5 MHz pass compared zero-filled data because
+the RAM image had not initialized QMI/XIP; the corrected 42.5 MHz run failed
+on its first word. The bench used only unwired GP8–GP12 and left the
+board's GP7 original-flash relay active. The RAM-only
+[CS# gap counter](cs_gap_timing.c) then measured all 21,610 internal gaps of
+the first contiguous UEFI 64-byte-read pass during a passive PDU boot:
+minimum ~1.071 µs, median ~1.076 µs, maximum ~1.106 µs. No MISO drive,
+BIOS EEPROM write or Pico flash write occurred; Fedora returned. The
+later multi-burst selector was built and tested as reported above. See
+[the timing note](../../docs/df-lock-control-20260928.md).
+
+**64-byte active handoff, 2026-09-28:** The RAM-only
+[address-matching selector](burst_match_late_od.pio) and
+[control](burst_match_control.c) substituted an **exact-original** 64-byte
+reply at `READ03 0xae0140`. Its passive and active trials both booted Fedora;
+PIO completion reported one verified handoff, no fault and empty DMA/FIFO.
+The first-target snapshot recorded original-flash CS# released and Pico MISO
+enabled. A fresh lossless command trace showed that the preceding `0xae00c0`
+read is optional, explaining the failure of the earlier fixed-skip selector.
+At that stage, the first DF-lock candidate required 1,386,944 changed reply
+bytes and could not fit in Pico SRAM. The later equal-length candidate was
+tested as reported above. See [the full note](../../docs/df-lock-control-20260928.md).
+No BIOS EEPROM or Pico flash was written in that earlier handoff trial.
+
+**UEFI DF-lock candidate, 2026-09-28:** The unflashed offline control in
+[the DF-lock investigation](../../docs/df-lock-control-20260928.md) changes a
+compressed UEFI firmware volume. The BC250 reads that ~1.38 MiB SPI region
+in 64-byte bursts. The older sparse interposer serves only one four-byte
+word per verified transaction, so it cannot safely apply the UEFI candidate.
+A RAM-only [input-only capture](cs_pass_burst_snapshot.c) measured one
+64-byte original-flash reply at ~33.34 MHz, all bytes matching the clean ROM,
+with Fedora booting afterwards. Neither SPI flash was written.
+
+**SMN alias control, 2026-09-28:** The RAM-only first-VCN read of PSP service
+argument `0x5a870` returned `0xff`; the host root-SMN bridge read the same
+`0xff` both before and after. Fabric argument `0x50d6c` separately matched
+the host at `0xf0`. The Pico verified 770/770 substitutions in the new boot.
+This strengthens the PSP/host alias model without identifying the physical
+source of the VCN disable state. Details are in
+[the VCN investigation](../../docs/video-decode-next-step.md).
+
+**Early PSP fabric result, 2026-09-28:** The RAM-only Pico captured a
+`0x50d6c` PSP read of `0xf0` at the first VCN request. A second guarded
+profile requested `0x8f0`, read back the unchanged `0xf0`, then verified the
+original value after restoration. Both boot passes of each profile had zero
+Pico faults. See [the VCN investigation](../../docs/video-decode-next-step.md).
+
+**Current VCN result, 2026-09-28:** A RAM-only profile omitted both the
+native type-13 and earlier signed `SEC_GASKET` policy requests to write
+`0x185103` to `0x1f820`; the policy object itself stayed byte-identical.
+The Pico verified 1,458/1,458 substitutions over two boot passes with no
+routing fault. Powered host MMIO still read `CC_UVD_HARVESTING=3`, and the
+VCN decode ring timed out. The policy-loop omission was verified offline but
+not observed with a direct live marker. The source of those disable bits
+remains unknown; see
+[the latest VCN evidence](../../docs/video-decode-next-step.md).
+When replacing the RAM-only Pico image on this wired board, use
+[`load_and_arm_ram.py`](load_and_arm_ram.py) while the BC250 is already
+running and host CS# is idle high; then cold-cycle the BC250. With board power
+off, the CS# sense line reads low and the loader deliberately refuses to arm.
+
 **Current board result, 2026-09-27:** The [six-wire Pico 2 connection](../../docs/pico2-six-wire-miso.md)
 boots Fedora through the original BIOS flash in pass-through mode. After
 correcting the selector's MISO edge timing, exact-original active replies

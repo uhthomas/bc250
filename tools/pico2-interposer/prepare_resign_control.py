@@ -33,16 +33,30 @@ def main():
     parser.add_argument('--private-key', type=Path, required=True)
     parser.add_argument('--full-profile', type=Path, required=True)
     parser.add_argument('--full-patched', type=Path)
-    parser.add_argument('--mode', choices=('resign-clean', 'bypass-hook', 'noop-hook', 'component-probe'), default='resign-clean')
+    parser.add_argument('--mode', choices=('resign-clean', 'bypass-hook', 'noop-hook', 'component-probe', 'entry-probe'), default='resign-clean')
     parser.add_argument('--component-binary', type=Path)
     parser.add_argument('--hook-offset', type=lambda value: int(value, 0), default=0x178)
+    parser.add_argument('--spi-diag', action='store_true',
+                        help='record post-profile 0xC00000 SPI reads on the Pico')
+    parser.add_argument('--spi-diag-capacity', type=int, default=4,
+                        help='number of post-profile SPI addresses to retain')
     parser.add_argument('--name')
     parser.add_argument('--output-dir', type=Path, required=True)
     args = parser.parse_args()
-    if args.hook_offset not in (0x140, 0x178):
-        parser.error('--hook-offset must be 0x140 or 0x178')
-    if args.hook_offset != 0x178 and args.mode != 'component-probe':
+    if args.hook_offset not in (0, 0x140, 0x178):
+        parser.error('--hook-offset must be 0, 0x140 or 0x178')
+    if args.hook_offset == 0 and args.mode != 'entry-probe':
+        parser.error('entry hook offset requires --mode entry-probe')
+    if args.mode == 'entry-probe' and args.hook_offset != 0:
+        parser.error('--mode entry-probe requires --hook-offset 0')
+    if args.hook_offset == 0x140 and args.mode != 'component-probe':
         parser.error('early hook offset requires --mode component-probe')
+    if args.spi_diag and args.mode != 'entry-probe':
+        parser.error('--spi-diag requires --mode entry-probe')
+    if not 4 <= args.spi_diag_capacity <= 32768:
+        parser.error('--spi-diag-capacity must be between 4 and 32768')
+    if args.spi_diag_capacity != 4 and not args.spi_diag:
+        parser.error('--spi-diag-capacity requires --spi-diag')
 
     clean = args.clean.read_bytes()
     if len(clean) != 0x1000000:
@@ -51,13 +65,29 @@ def main():
     if key.key_size != 2048:
         raise ValueError('expected RSA-2048 signer')
     if args.mode != 'resign-clean':
-        if args.full_patched is None:
+        if args.full_patched is None and args.mode != 'entry-probe':
             parser.error('hook controls require --full-patched')
-        full = args.full_patched.read_bytes()
-        if len(full) != len(clean) or full[HOOK:HOOK + 4] != bytes.fromhex('a01600ea'):
-            raise ValueError('unexpected full TOS hook source')
-        modified = bytearray(full)
-        if args.mode == 'bypass-hook':
+        if args.mode == 'entry-probe':
+            modified = bytearray(clean)
+        else:
+            full = args.full_patched.read_bytes()
+            if len(full) != len(clean) or full[HOOK:HOOK + 4] != bytes.fromhex('a01600ea'):
+                raise ValueError('unexpected full TOS hook source')
+            modified = bytearray(full)
+        if args.mode == 'entry-probe':
+            if args.component_binary is None:
+                parser.error('entry-probe requires --component-binary')
+            component = args.component_binary.read_bytes()
+            if not 0 < len(component) <= 0x200 or len(component) % 4:
+                raise ValueError('entry probe must be 4-byte aligned and at most 512 bytes')
+            modified[COMPONENT:COMPONENT + len(component)] = component
+            entry = TOS + 0x100
+            displacement = COMPONENT - (entry + 8)
+            if displacement % 4 or not -(1 << 25) <= displacement < (1 << 25):
+                raise ValueError('invalid entry branch displacement')
+            modified[entry:entry + 4] = (
+                0xea000000 | ((displacement // 4) & 0xffffff)).to_bytes(4, 'little')
+        elif args.mode == 'bypass-hook':
             modified[HOOK:HOOK + 4] = clean[HOOK:HOOK + 4]
         elif args.mode == 'noop-hook':
             # Run the hook, reproduce its displaced MOV, and resume at 0x17c.
@@ -97,6 +127,7 @@ def main():
     allowed = lambda i: (KDB_MODULUS <= i < KDB_MODULUS + 256 or
                          (args.mode != 'resign-clean' and
                           (TOS + 0xd0 <= i < TOS + 0xf0 or
+                           (args.mode == 'entry-probe' and TOS + 0x100 <= i < TOS + 0x104) or
                            (args.mode == 'component-probe' and args.hook_offset == 0x140 and
                             TOS + 0x100 + 0x140 <= i < TOS + 0x100 + 0x144) or
                            (args.mode in ('noop-hook', 'component-probe') and
@@ -134,6 +165,8 @@ def main():
              '#ifndef BC250_SPARSE_PHYSICAL_PROFILE_H',
              '#define BC250_SPARSE_PHYSICAL_PROFILE_H',
              f'#define PROFILE_NAME "{name}"',
+             *(['#define PROFILE_DIAG_SPI 1'] if args.spi_diag else []),
+             *([f'#define PROFILE_DIAG_CAPACITY {args.spi_diag_capacity}u'] if args.spi_diag else []),
              '#define PROFILE_ROWS 872744u',
              '#define PROFILE_RUNS 37u',
              f'#define PROFILE_CHANGED_WORDS {len(changed)}u',
@@ -155,6 +188,8 @@ def main():
                    hook_offset=hex(args.hook_offset),
                    component_probe_sha256=(hashlib.sha256(args.component_binary.read_bytes()).hexdigest()
                                            if args.component_binary else None),
+                   spi_diag=args.spi_diag,
+                   spi_diag_capacity=args.spi_diag_capacity if args.spi_diag else 0,
                    bios_flash_allowed=False)
     write_private(args.output_dir / 'summary.json', (json.dumps(summary, indent=2) + '\n').encode())
     print(json.dumps(summary, indent=2))

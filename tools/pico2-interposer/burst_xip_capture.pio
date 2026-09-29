@@ -1,0 +1,25 @@
+; Input-only PIO2 capture of the 64 data bytes returned on unwired GP8.
+; Another PIO owns GP8's output; PIO inputs see the pad regardless of the
+; selected output function. DMA drains 16 full words from the RX FIFO.
+.program burst_xip_capture
+.wrap_target
+    wait 1 gpio 9
+    wait 0 gpio 9
+    set x, 31
+command_bit:
+    wait 1 gpio 10
+    wait 0 gpio 10
+    jmp x-- command_bit
+    set x, 15
+word:
+    set y, 31
+data_bit:
+    wait 1 gpio 10
+    in pins, 1
+    wait 0 gpio 10
+    jmp y-- data_bit
+    push block
+    jmp x-- word
+    wait 1 gpio 9
+    irq set 1
+.wrap

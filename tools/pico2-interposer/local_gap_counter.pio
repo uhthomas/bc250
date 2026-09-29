@@ -1,0 +1,15 @@
+; Input-only timing witness for the PIO2 on-chip SPI master's GP9 CS#.
+; Run in PIO0 SM1 alongside the real GP7 relay in PIO0 SM0.
+.program local_gap_counter
+.wrap_target
+start:
+    wait 1 gpio 9
+    mov x, ~null
+high:
+    jmp pin tick
+    mov isr, x
+    push block
+    jmp start
+tick:
+    jmp x-- high
+.wrap

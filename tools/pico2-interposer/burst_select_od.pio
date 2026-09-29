@@ -1,0 +1,46 @@
+; Experimental 64-byte READ03 selector. Default PASS through GP7 open-drain
+; CS# relay; PATCH route verifies the full command before MISO drives data.
+; TX FIFO for PATCH: route=1, expected READ03, remaining-bit count=510,
+; first response word. DMA must supply 15 subsequent words fast enough.
+; Autopull at 32 output bits loads each next response word. OFFLINE ONLY.
+.program burst_select_od
+.side_set 1 opt pindirs
+.wrap_target
+start:
+    set pindirs, 0 side 0
+    set x, 0
+    mov osr, x
+    out null, 32
+    pull noblock
+    mov y, osr
+    jmp !y pass
+    out null, 32
+    mov x, osr
+    out null, 32
+    wait 0 gpio 2
+    set y, 31
+command_bit:
+    wait 0 gpio 3
+    wait 1 gpio 3
+    in pins, 1
+    jmp y-- command_bit
+    mov y, isr
+    jmp x!=y fault
+    mov x, osr
+    out null, 32
+    out pins, 1 side 1
+    wait 0 gpio 3
+data_bit:
+    wait 1 gpio 3
+    wait 0 gpio 3
+    out pins, 1 side 1
+    jmp x-- data_bit
+    wait 1 gpio 2 side 1
+    jmp start side 0
+fault:
+    irq wait 0
+pass:
+    wait 0 gpio 2
+    set pindirs, 1 side 0
+    wait 1 gpio 2
+.wrap

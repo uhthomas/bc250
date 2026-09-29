@@ -1,5 +1,195 @@
 # RAM-only VCN driver startup trial
 
+**2026-09-29 PSP TMR read control:** A signed, RAM-only hook asked the PSP
+mapping helper to read the VCN firmware TMR page after the first VCPU
+wait. The helper returned a nonzero value whose low 28 bits were `0xf`
+before any payload word was read. The same delayed call also returned
+`0xf` for a PSP bookkeeping address used by the signed driver in another
+context, so the mapping result is inconclusive about firmware presence.
+The two targets each passed ten native ARM cases, and Pico verified
+2,086/2,086 and 2,090/2,090 substitutions over two BIOS passes without
+fault or stall. The normal boot is
+`e8d08497-33f8-4f87-befb-d26a04cd0d98`, with Pico CS-PASS armed in
+SRAM; no flash write or decoded frame. See the
+[investigation](../../docs/video-decode-next-step.md) for logs and limits.
+
+**2026-09-29 MPC mux comparison:** The signed
+[`driver-delayed-vcn-mux-premap.S`](driver-delayed-vcn-mux-premap.S)
+compared three VCPU fetch mux registers at full 32-bit width after the
+first VCPU wait and before any second-call cache-map replay. It returned
+`0x72000003`, matching Linux's MUXA0 and MUXB0 `0x040c2040` and MUX
+`0x88`. The VCPU still did not reach ready (`UVD_STATUS=4`). Ten native
+instruction cases and 2,010/2,010 Pico substitutions across two BIOS
+passes passed without fault or stall. The reused kernel runner labels the
+event `cache-size0`, but this hook compared the muxes. The normal BC250
+boot is `ae0f6a38-2e7c-4be3-af63-b9cb9d45dac1` with Pico CS-PASS in
+SRAM; neither flash device was written. See the
+[investigation](../../docs/video-decode-next-step.md) for hashes and
+limits.
+
+**2026-09-29 MPC control read:** A pre-map signed PSP hook sampled
+`UVD_MPC_CNTL` after the first VCPU wait and reported low 28 bits `0x10`,
+matching replacement mode 2. The feared poisoned host read-modify-write
+would have reported `0x0fffffd7`; that failure was not seen. Twelve native
+cases and 1,934/1,934 Pico substitutions passed. VCPU-ready remained
+absent. The [investigation](../../docs/video-decode-next-step.md) records
+the exact hashes and limits. The normal BC250 boot is
+`a1f29978-e69a-4df7-8155-03e35733675d` with Pico CS-PASS in SRAM;
+neither flash device was written.
+
+**2026-09-29 full pre-map cache comparison:** The new signed
+[`driver-delayed-vcn-map-premap.S`](driver-delayed-vcn-map-premap.S)
+compares all sixteen VCPU firmware, stack, context and shared-memory
+cache-window words at full 32-bit width after the first VCPU wait, before
+the second PSP call replays a window. It returned `0x70000010`: all sixteen
+matched. `UVD_STATUS` stayed `4`, so firmware fetch and VCPU execution
+remain unproven. The 23-case native test covered every mismatch index and
+the unmarked startup; Pico verified 1,978/1,978 substitutions across two
+BIOS reads. The reused Linux runner calls its status `cache-size0`, but
+this hook compares all sixteen words. No frame or flash writes. See the
+[investigation](../../docs/video-decode-next-step.md) for hashes and limits.
+
+**2026-09-29 delayed firmware BAR control:** A second pre-map variant
+sampled PSP `UVD_VCPU_CACHE_BAR_LOW0` after the VCPU wait but before map
+replay. Its low 28 read bits were `0x0fa00000`, matching the programmed
+BAR low `0x1fa00000`; VCPU status stayed `4`. The kernel runner reused the
+`cache-size0` event name, but the signed hook actually sampled `0x2107c`.
+Ten native cases and 1,934/1,934 Pico substitutions over two BIOS passes
+passed. This shows BAR low and cache size retained their observed values,
+not that the firmware was fetched or that the VCPU executed. See the
+[investigation](../../docs/video-decode-next-step.md) for hashes and limits.
+
+**2026-09-29 delayed cache persistence control:** The first delayed
+cache-size diagnostic read occurred after the hook replayed all 17 map
+writes, so it did not prove persistence. The corrected
+[`driver-delayed-vcn-cache-premap.S`](driver-delayed-vcn-cache-premap.S)
+reads `UVD_VCPU_CACHE_SIZE0` after the first Linux VCPU wait but before
+any cache-window replay in its marked call. It returned `0x64000`, the
+value programmed in the first successful PSP load, while VCPU status
+remained `4`. Ten native cases checked the order; the Pico verified
+1,934/1,934 substitutions across two BIOS reads with no fault or stall.
+One cache size setting persisted, but the other map words and VCPU fetch
+have not been shown to work. No frame decoded or flash device was written.
+The [investigation](../../docs/video-decode-next-step.md) records hashes
+and normal-boot recovery.
+
+**2026-09-29 delayed reset result:** The first three delayed-read profiles
+relocated the original VCN address table to PSP data address `0xe19010` and
+stalled powered `LOAD_IP_FW` before the read. A relocation-only control
+stalled identically, matching an earlier failed writable-data table path.
+Do not use those profiles for another live run. The corrected
+[`prepare_delayed_vcn_reset_code_trial.py`](prepare_delayed_vcn_reset_code_trial.py)
+keeps both proven RX-region tables at `0xe17d98/0xe17fb8` and places only
+the 72-byte hook dispatch in zero code space at `0xe00200`. Its signed
+RAM-only view passed nine native PSP cases, and the Pico verified all
+1,926 substitutions across two BIOS passes without a fault. The initial
+powered PSP firmware reload succeeded. After one full VCPU wait, a second
+PSP call read `UVD_SOFT_RESET` without writing it and reported low 28 bits
+`0`; VCPU-ready still did not appear (`UVD_STATUS=4`). Reset bits 3 and 19
+therefore had not reasserted during that interval. The [investigation
+log](../../docs/video-decode-next-step.md) has the exact hashes, evidence
+and limits. No flash device was written or frame decoded. BC250 is back
+on normal Fedora boot `f9330749-003d-404b-bc7e-a46343dd5a17`.
+
+The 2026-09-29 [cache-route generator](prepare_cache_route_trial.py)
+produced two signed, RAM-only profiles with the same verified early policy.
+The PSP read of cache BAR low `0x2107c` **before** any PSP window write
+reported low 28 bits `0`; the host had attempted to write `0x1fa00000` but
+read back all ones. A second profile wrote the 17 cache windows through the
+PSP and reported low 28 bits `0x0fa00000` afterward, matching the PSP's
+own write. Both hooks first checked PSP VCN power `0x800`. The diagnostic
+status intentionally aborts firmware loading and discards the high four
+data bits. This isolates a host/PSP access-path difference without proving
+which routing or isolation control causes it. The earlier successful PSP
+cache/reset replay still produced no VCPU-ready bit. See the
+[full result](../../docs/video-decode-next-step.md). Both trials passed
+native ARM checks and Pico physical substitution checks; no flash writes
+or decoded frame occurred. BC250 is back on normal Fedora boot
+`9ce1c8eb-de37-4d7b-b159-22974eee2bb4`.
+
+The 2026-09-29 combined early-gasket/late-reset profile closes a limitation
+of the reset-stability trial below: that diagnostic hook returned a nonzero
+status, preventing a successful post-release PSP firmware reload. The new
+hook returns success after its PSP-side reset-bit check. The Pico verified
+1,854/1,854 substitutions, and post-release `LOAD_IP_FW` returned
+`ret=0/status=0`, but VCPU-ready bit `0x2` remained clear (`UVD_STATUS=4`).
+Linux sets the `0x4` busy bit itself. The PSP-side reset readback does not
+prove the host reset/cache aperture is responding. See the [full result](../../docs/video-decode-next-step.md)
+and ignored physical logs under
+`output/pico2/tos-entry-gasket12-postcache-success-20260929/physical/`.
+Neither BIOS EEPROM nor Pico QSPI was written; no frame decoded.
+
+The `...postcache-map-rx-uvd-reset-stability` profile writes zero once to
+the powered VCN `UVD_SOFT_RESET` register, then reads it 128 consecutive
+times via the PSP without another write. The last read was zero with native
+VCLK clock code 16, but VCPU status stayed `4` and the decode ring timed
+out. The [journal](../../output/video-decode-20260922/results/native-reset-stability-20260929.jsonl)
+and [kernel log](../../output/video-decode-20260922/results/native-reset-stability-20260929.dmesg)
+record the result. The 29-case native model and 1,414/1,414 Pico
+substitutions passed. This does not prove reset stayed clear after the
+hook returned. BC250 is back on normal boot
+`8e5cc91a-8355-4f3e-adee-716d66b7c255`; neither flash device was written.
+
+The `...postcache-map-rx-uvd-reset2-before-write` profile adds a PSP read of
+VCN `UVD_SOFT_RESET2` at `0x1ff98` without writing the target. On a native
+1250 MHz VCLK diagnostic boot, it returned `0x00030000`: both MMSCH clock
+reset-status bits were set and the atomic-reset control bit was clear. The
+Pico verified 1,402/1,402 substitutions, fault 0; VCPU status stayed `4` and
+the decode ring timed out. The runner's generic `reset_low28` field contains
+this `SOFT_RESET2` value. See the [journal](../../output/video-decode-20260922/results/native-reset2-beforewrite-20260929.jsonl)
+and [kernel log](../../output/video-decode-20260922/results/native-reset2-beforewrite-20260929.dmesg).
+The BC250 is back on normal boot `a6329fe6-db36-4bc7-9965-94152bfef2b6`
+with Pico CS-PASS v2 armed in RAM. No BIOS EEPROM or Pico QSPI write occurred.
+
+The `...postcache-map-rx-uvd-reset-before-write` profile replays the pinned
+VCN memory windows and then reads PSP address `0x20180` without first writing
+that register. The corrected build uses the proven 52-byte TMR hook; its
+signed ROM view differs from the earlier powered reset-status profile only
+in this readback hook, hashes and signatures. The 28-case native ARM check
+passed. With native SMU clock code 16 applied, the live PSP read returned
+`UVD_SOFT_RESET=0x00080008` after Linux's release sequence. VCPU reset and
+its VCLK reset-status indication therefore remained asserted. The earlier
+zero readback was produced by a diagnostic hook that explicitly wrote zero
+first, and that trial also left `UVD_STATUS=4`. The first build of the new
+profile accidentally used an older 40-byte TMR hook and yielded all-ones
+VCN MMIO; discard that run. The corrected Pico image verified 1,402/1,402
+substitutions with no faults. Raw evidence is in
+`output/video-decode-20260922/results/native-reset-beforewrite-v2-20260928.*`;
+see [the investigation log](../../docs/video-decode-next-step.md) for the
+recovered normal-boot state. No BIOS EEPROM or Pico QSPI write was made.
+
+The `vcn-skip-both-1f820` profile also guards the earlier signed
+`SEC_GASKET` section `0x201` write. It suppresses the service call only when
+both the address and value match `(0x1f820, 0x185103)`, while retaining every
+other policy write and the original policy bytes. Offline execution of the
+real policy loop yielded 1,230 writes before and 1,229 after the guard, with
+three predicate controls. The re-signed driver and physical profile passed
+the RAM-only boot: 1,458/1,458 substitutions, zero faults and routing
+mismatches. On boot `5eeba018-0e66-43c9-81a9-dbcdd927b49d`, powered host
+MMIO still read `CC_UVD_HARVESTING=3`; PSP firmware load returned zero status,
+but VCPU status stayed `4` and the decode ring timed out `-110`. This excludes
+both observed `0x1f820` requests as a sufficient fix if the early policy
+loop ran; no direct live marker established that it did. The ignored trial is
+`output/pico2/driver-video-skip-both-control-20260928/`, prepared by
+[`prepare_policy_control_trial.py`](prepare_policy_control_trial.py) and
+checked by [`test_policy_control_trial.py`](test_policy_control_trial.py).
+Neither flash device was written.
+
+The preceding `...postcache-map-rx-skip-1f820` profile omits the original
+type-13 setup write `0x1f820 <- 0x185103` by replacing its `SVC #0x7c`
+with a zero-result Thumb instruction. Eight native startup and 25 post-load
+offline cases pass. The Pico verified 1,406/1,406 substitutions over two
+boot passes with zero faults and routing mismatches. On boot
+`960c4549-0a87-475f-8952-297b3eedff7f`, powered host MMIO still read
+`CC_UVD_HARVESTING=3`; PSP firmware load succeeded but the VCPU never
+started and the decode ring timed out `-110`. This single original write
+does not explain the live disable value. A separate signed `SEC_GASKET`
+record contains the identical tuple and was not altered; Cezanne and Renoir
+reference policies contain it too. The profile and UF2 are ignored
+under `output/pico2/driver-video-skip-native-control-20260928/`; neither
+flash device was written. See `docs/video-decode-next-step.md` for the full
+trace and the remaining uncertainty about the value's source.
+
 Two RAM-only PSP readback profiles now target VCN firmware-cache BAR low at
 word address `0x2107c`. Plain read returned low 28 bits `0xeadbeef`. A
 profile that first wrote the observed TMR low word `0x1fa00000` through PSP

@@ -9,6 +9,1535 @@ temporary blanket pause; it does not justify a speculative write. Do not reflash
 unchanged candidates or reset firmware just for convenience.
 Times below are UTC. Detailed evidence is under output/video-decode-20260922/.
 
+Ring cache-size address and data verified via PSP (2026-09-29)
+-------------------------------------------------------------
+Held VCPU reset and sent PACKET0(1c3,0), 63000 through the ring for the
+firmware cache-size0 register. First marker executed, RPTR16. The signed
+BO-premap PSP hook compared all 16 cache words before replay and returned
+71363000: first mismatch at index3, observed value63000. The ring then
+restored size64000, second marker executed, RPTR32. PSP returned 70000010,
+all 16 values matched. Unmarked signed replay returned ret0/status0. This
+proves the ring sent the intended address and data to cache-size0 and that
+the value was restored. It is independent of the host readback, which is
+ffffffff. Journal/dmesg SHA256 are
+d60c52ec3028823911474d77e771740c08125907adec6087ee255fcb3a27ba48,
+de5b9ab5e39e6df9376f49da2d0b36881d139eed9bf9ca9a3bbd07ab293ae39b.
+The other BAR/offset/reset ring writes still lack individual readback;
+their first values were the already programmed values. VCPU remained
+unready, UVD_STATUS4, no decoded instruction. Clean diagnostic boot
+d561f7cc-a062-49d2-80a3-2dae84aea324; /boot ro, no GRUB entry or Pi
+timer, BO-premap Pico SRAM profile armed without fault. No BIOS/Pico flash
+write. Next measure ring reset with PSP readback, then focus upstream
+VCN enable/fetch.
+
+Correct VCPU ring address found (2026-09-29)
+-------------------------------------------
+The in-tree VCN 2.0 driver maps host segment-1 offsets to ring addresses
+minus 0x80 (GPCOM DATA0 584->504; NO_OP 5bf->53f). Thus VCPU_CNTL host
+258 must be ring 1d8. Guarded ring writes changed its host readback
+0ff20200->0ff20000->0ff20200, with RPTR0->16->32, two scratch markers,
+and no host restore. This proves ring data and 1d8 address for CLK_EN.
+Journal SHA256 3da18d5d009d9b76ca49622de24ab873ecb0ec355abc929183f5a6e6bef4e954.
+TRCE_EN did not latch through host or mapped ring. Reset at 1e0 and cache
+registers at 59e/59f/1c2/1c3 had following markers execute; their cache
+values matched the pinned ordinary BO (BAR f4:1fc00000, offset20,
+size64000). Host reset/cache readback was ffffffff, so these writes have
+no positive target readback yet. UVD_STATUS4, no ready or VCPU instruction.
+Trace/reset/cache journal SHA256 values are
+348ee060574e8f0fbf60add625612d09fd25e4e01229681ea034f4aefd762a97,
+b0ed9dbfdfbb3a07f0e5591b9a5571ec3e9b59582aea44668c4651c2f81efbff,
+7885d70b471f458944a5557dc2567d994690eb46b9cfc4e2978a73e83ccaf62f.
+Clean diagnostic boot dec024bb-d50a-44a8-8e74-faf22c2ea5f2, /boot ro,
+no GRUB entry or Pi timer, Pico SRAM active. No BIOS/Pico flash write.
+Next use PSP readback of a temporary ring-written cache value while reset
+is held; restore the pinned value before reset release.
+
+Earlier wrong-address VCPU_CNTL probes (2026-09-29)
+--------------------------------------------------------
+Two reversible ring trials wrote documented host-writable VCPU_CNTL.CLK_EN
+off then on through PACKET0 addresses c258 and 0258. Both packet groups
+executed in each trial: RPTR0->16->32 and SCRATCH9 wrote 11112222 then
+33334444. Yet VCPU_CNTL stayed 0ff20200 throughout, UVD_STATUS stayed4,
+and no host restore was needed. These address forms therefore do not give
+a demonstrated route to VCPU_CNTL; the earlier TRCE_EN failure cannot be
+attributed confidently to self-clearing. Journal SHA256 values
+c458260e47c2884108da7955606492c0edc7144b326c56b03b85fc19bca34a1a,
+e8e7df00afa5b4977b997947923083f49090512b15ef720387e0716c5e0010c3.
+After cold cycle, clean diagnostic boot dec66d26-7753-4dff-a1d5-d2260969a66c,
+Pi timer inactive, /boot ro, no GRUB entry, Pico SRAM active. No BIOS or
+Pico flash write. The later positive 1d8 calibration resolves the address error.
+
+VCN ring packet executed; VCPU trace still unavailable (2026-09-29)
+---------------------------------------------------------------
+A guarded 16-dword decode-ring buffer started with PACKET0(0xc01d,0) and
+deadbeef. NO_FETCH hold kept RPTR0 and SCRATCH9=cafedead; clearing only
+NO_FETCH moved RPTR16 and changed SCRATCH9 to deadbeef. The VCN ring
+command processor therefore fetched and executed a register-write packet
+from GPU memory. The VCPU was still unready (UVD_STATUS4); no VCPU firmware
+instruction or decoded frame is established. The first trial's runner
+returned1 because amdgpu recovery invoked a second, guard-skipped probe;
+the first probe and raw kernel log completed. Dmesg SHA256
+0e248777c35e8fdf1ed09b2ae7d2ab4054c27f30a2bb4ad20e3c03a8fad1a8db.
+A second trial used the working ring path to submit a VCPU_CNTL TRCE_EN
+write plus the scratch marker. Scratch again became deadbeef, but VCPU_CNTL
+remained 0ff20200, PC trace0 and status4. Either that ring address does not
+reach the VCPU control or TRCE_EN is rejected/self-cleared; this does not
+prove VCPU nonexecution. Structured journal SHA256
+fcce381021c2fef467792b36386db4e65e4b531d9b9bd4cb3bac17d5e6659b98.
+BC250 is on clean diagnostic boot dc4820d9-16eb-4897-b95f-68b29b28b84b,
+Pi timer inactive, /boot ro, no GRUB entry, Pico SRAM profile active and no
+BIOS EEPROM/Pico QSPI write. Next calibrate ring register addressing with
+a known writable control before relying on a VCPU register packet.
+
+VCN decode-ring GPU memory read established (2026-09-29)
+-------------------------------------------------------
+A guarded decode-ring trial used the allocated GPU BO at 0x264000 and an
+aligned 16-dword WPTR. Its hardware RPTR advanced 0 -> 16 while the ring
+contained NOP packets, but VCPU status stayed 4. A controlled follow-up
+used the kernel's command/scratch test packet. With RB_NO_FETCH set and
+RB_NO_UPDATE clear, WPTR16 left RPTR0 and SCRATCH9=cafedead. Clearing only
+RB_NO_FETCH moved RPTR to16; UVD_STATUS changed from its pre-test value4
+to10005:
+RBC_BUSY and RBC_ACCESS_GPCOM were set. The earlier NOP-only packet did not
+set them. The fetch control and packet-dependent status are positive evidence
+that the VCN ring controller fetched command data from GPU memory. The
+unchanged LMI_STATUS and latency counter did not see this ring traffic.
+SCRATCH9 did not become deadbeef, VCPU PC/PF remained0, firmware did not
+report ready and the decode ring timed out. This establishes ring memory
+access, not VCPU firmware fetch or video decoding. NOP/control journal
+SHA256 a8516ac18e1333ce1c4518fb6e65df9ba14bd7fb7b8909de7f56f2500baeaf43,
+ffa106f7b3a268ec96a1638a0a4e035d429bf8334a8e68887c7b96e603ca1f82.
+The first trial needed a second PDU cold cycle to restore SSH. The control
+trial returned to clean diagnostic boot aa8c0e5c-428b-4be8-bfa9-110e45483b49.
+The Pi timer is inactive, /boot ro, no pending GRUB entry, Pico SRAM profile
+unchanged, and no BIOS EEPROM/Pico QSPI writes occurred. Next investigate
+the VCPU firmware-start and GPCOM stall rather than whether RBC can fetch.
+
+VCN-local perfmon request check (2026-09-29)
+------------------------------------------
+A new guarded diagnostic module armed VCN LMI perfmon selector 0 before VCPU
+release, froze it after the 4096-sample LMI-status window, then sampled all
+other 31 selectors for about 2 ms each. The state and selector controls
+read back correctly, but every low/high count remained zero. LMI_STATUS
+stayed 007c337f; LMI latency stayed 0000ff00; MC_CREDITS stayed 10101010;
+SPH stayed zero. PSP firmware load returned ret0/status0 but UVD_STATUS
+remained 4 and the ring timed out. This yields no positive evidence of
+VCN memory traffic, but selector event meanings and a known-good positive
+control are missing, so zero counts cannot prove no request was attempted.
+Journal SHA256 bb2491b68fc071082e7f42aacdd6ce2851f8b05f6e57a4f4c04a5df8430d5100.
+The Pi PDU timer was stopped after cold-cycle recovery to clean diagnostic
+boot b62834b4-a5e8-495a-b205-44f45cf78800. Pico SRAM retained the
+vcn-psp-bo-fetch profile. No BIOS EEPROM/Pico QSPI write or decoded frame.
+
+Early policy 0xf and VCN memory-request check (2026-09-29)
+-----------------------------------------------------------
+Combined the previously verified first-read 0x1f8a4=0xf substitution with a
+signed ordinary-BO VCN profile in Pico SRAM. The diagnostic boot verified
+1860/1860 substitutions with no fault or mismatch. With native VCLK16,
+power/gates enabled and PSP firmware request ret0/status0, VCPU PC/PF stayed
+zero, UVD_STATUS stayed 4 and the ring timed out. Eight selected VCN register
+checkpoints matched the prior 0xb ordinary-BO trace. Early 0xf changed the
+ABL0 readback in the separate control, but has no observed VCN-start effect
+under this late profile. Journal SHA256 f3c77574dd31e3659b046929203c110703923de477b15083ba9114a18db7abb6.
+An added VCN-local probe kept the LMI latency monitor armed and sampled
+LMI_STATUS 4096 times over ~29 ms after VCPU release. Every read was 007c337f;
+AND=OR, transitions=0, all read-clean bits remained set. Latency stayed
+0000ff00 and VCPU PC/PF zero. This finds no in-flight LMI request in the
+sampled window or completed transaction observed by latency; there is no
+positive calibration, so it does not prove no memory request at all. Journal
+SHA256 6ba6f9fa6f91b676d6e929eb618454c30ac5edfa01ac60946ba7f14d6ad46800.
+An idle root-PCI SMN read stalled the board; PDU cold cycle recovered it.
+That path is marked unsafe. The BC250 returned to clean diagnostic boot
+70823f2c-811e-4f94-8e4b-323e35c5c545, /boot ro, no pending GRUB entry or
+Pi timer. The pinned vcn-psp-bo-fetch profile was restored in Pico SRAM. No
+BIOS EEPROM/Pico QSPI write and no decoded frame.
+
+VCN VCPU clock-gate calibration (2026-09-29)
+--------------------------------------------
+The first guarded module stopped before perturbing controls: its expected
+CGC_CTRL 0000018c omitted the live bit31 MMSCH_MODE. A revised module read
+CGC_CTRL 8000018c, toggled VCPU_CNTL.CLK_EN 0ff20200 -> 0ff20000 ->
+0ff20200 and CGC_GATE.VCPU 00100000 -> 00140000 -> 00100000 after the
+signed PSP hook requested UVD_SOFT_RESET=0, before Linux's own reset
+release writes. Both controls latched and restored. CGC_STATUS stayed
+bfffffff before, during and after both toggles, after reset release, and
+after one full wait. Its VCPU clock bits therefore lack a positive status
+calibration; this does not prove that the physical clock is stopped or
+running. The signed PSP request returned ret0/status0, ordinary BO and
+payload guards passed, but UVD_STATUS remained 4 through ten waits and no
+frame decoded. Pico verified 3716/3716 RAM-only substitutions over the two
+trial boots, fault/mismatch/late/rxstall all zero. Revised module SHA256
+608377257401f9dd599101ba71ae5a9a46a2c196237adaca62706d3798ae0de6;
+journal/dmesg SHA256 6bc97e507eafcc105bd10bc90ff2380a4bc28f2e09e7888def88d68715147f75,
+cd52fd8aa4700855d2a2ff40bb675296a384c2b405ccf10c50de33ff6a253250.
+Normal Fedora boot 2ba47304-cb6d-40f8-81af-c74d31aefd51 has amdgpu
+bound, /boot ro, no diagnostic GRUB entry, CS-PASS v2 armed in Pico SRAM,
+Pi timer inactive. No BIOS EEPROM or Pico QSPI write.
+
+BO/reset source cross-check (2026-09-29)
+---------------------------------------
+The ordinary-BO Pico profile derives from the earlier signed PSP reset-
+release ROM; its generator changes only 17 cache-map values and the body
+hash/signature. A semantic equivalent passed 26 native ARM post-cache cases
+offline. The prior BO trials therefore already included the signed reset
+release. The diagnostic GPU reported VRAM f400000000..f41fffffff, so the
+pinned VCN BO f41fc00000 is in VRAM. Neither fact proves that the VCPU
+fetched the payload; they avoid redundant reset and GTT-placement tests.
+
+VCN VCPU arbiter read-only control (2026-09-29)
+-----------------------------------------------
+A second pinned ordinary-BO startup sampled UVD_RB_ARB_CTRL at three powered
+phases and read 00000000 every time. The VCPU_DROP and VCPU_DIS bits were
+both clear. MPC_CNTL stayed 10 and LMI_VM_CTRL stayed 0. CGC_STATUS read
+bfffffff; its bit polarity is not validated on this board, so it cannot
+prove whether VCPU clocks run. PSP VCN load returned ret0/status0, BO and
+payload guards passed, UVD_STATUS stayed 4 and no frame decoded. This rules
+out the named arbiter disable/drop bits as the simple block, not the early
+harvest source or a separate fetch/clock gate. Pico verified 1858/1858
+substitutions in two passes, with fault/mismatch/late/rxstall all zero.
+Module SHA dfba2a1b327c57f19d5347444c361bf3a6c9893e5f26a7ca6b9ce778de5f3614;
+journal/dmesg SHA256 e34f3602aaf5e0f28c571c7cc8cd5a0cdc5cf7e6cd9283afa35c9459f7f9c60c,
+a8d89eb3f6d3ace78f50031cce89bf23edf79f40b4346b03522cc1fc130a35e2.
+Normal Fedora boot bf616234-f163-4541-ab4e-b2ad2afc3dd7 has amdgpu
+bound, /boot ro, no diagnostic GRUB entry, CS-PASS v2 armed in Pico SRAM,
+Pi timer inactive. No BIOS EEPROM or Pico QSPI write.
+
+Powered VCN LMI latency-counter trial (2026-09-29)
+------------------------------------------------
+Reused the verified RAM-only ordinary-BO Pico profile with a guarded kernel
+module that armed VCN2 LMI MAX/MIN/AVG latency START bits before VCPU reset
+release. UVD_LMI_LAT_CTRL read 0 -> 700 and retained 700 through the first
+full VCPU wait. The latency counter stayed 0000ff00 (max 0/min ff), average
+counter 0 and MPC latency counters 0. Perfmon control was 0, so its zero
+count registers were disabled and provide no traffic evidence. Signed PSP
+firmware load returned ret0/status0 and the BO/payload guards passed, but
+UVD_STATUS stayed 4 through ten waits and no frame decoded. The unchanged
+armed latency registers do not prove no VCPU fetch without a positive LMI
+transaction control; they do narrow the next measurement to fetch/clock/
+reset routing rather than forcing CC_UVD_HARVESTING=3.
+Pico verified 1858/1858 substitutions across two passes, fault0,
+mismatches0, late0, rxstall0. Module SHA256
+2102f14853045acc9a1ea80aebfd86a85264903ab3f3f01745bf2de6f34e72c3;
+journal/dmesg SHA256
+159f0c3582baf0b2bb7754f698d491fa35a4d5a2a57aa862d06f7590927f2de7,
+e0eb22debeb1a6f589f1932cf9b22e310c06c80b716ca6c1463e64a98f46bdf3.
+Normal Fedora boot 7a846d8c-9d95-4373-809a-022d9829f0dc has amdgpu
+bound, /boot ro, no diagnostic GRUB entry, CS-PASS v2 armed in Pico SRAM,
+Pi timer inactive. No BIOS EEPROM or Pico QSPI write.
+
+Delayed PSP ordinary-BO cache-map persistence (2026-09-29)
+----------------------------------------------------------
+The signed RAM-only PSP hook checked sixteen VCN firmware/stack/context/
+shared cache-window words after the first full VCPU wait and before any
+second-call replay. It returned 0x70000010: every full 32-bit value matched
+the ordinary BO map at f41fc00000. The first powered PSP load returned
+ret0/status0, BO address/payload guards passed, power/PGFSM/version were
+800/0/2001b. VCPU PC and PF remained zero; UVD_STATUS stayed 4 and no
+frame decoded. This excludes loss of the PSP-visible BO map through that
+wait, but does not prove VCPU memory fetch or identify the disable source.
+CC_UVD_HARVESTING remained 3. Twenty-three native instruction cases passed.
+Pico verified 1982/1982 substitutions across two BIOS passes, with fault,
+mismatch, late-decision and RX-stall zero. RAM-only ROM SHA
+cc49c19df92c394c4a8af791839f4eee7d695cd14b75918b30dae9159d225eec;
+UF2 SHA b9a9768bbaacc4f7957f964cec52ed3640c31ce6af12ec2c99e98dff393502a2.
+Journal/dmesg SHA256: 0671799a23255a9f030b4a122a24f77f63620fc047e6d6362647a4ff952196f0,
+e3334945a4d0161534ed65906d6b2782b05f7c0480a06ef34d7622967949460b.
+No BIOS EEPROM or Pico QSPI write. Normal boot
+92865f1e-597d-44fa-b1e2-ebbea6d6c786 has amdgpu bound, /boot ro,
+no diagnostic GRUB entry, Pico CS-PASS v2 armed, Pi timer inactive.
+
+Guarded PSP ordinary-BO VCN fetch trial (2026-09-29)
+----------------------------------------------------
+A RAM-only signed PSP hook wrote the 17 powered VCN cache-window values for
+the ordinary GPU BO at f41fc00000. The opt-in kernel module checked its
+allocation, shared address, firmware size and 16-byte payload prefix before
+the powered PSP request. PSP returned ret0/status0. VCN power/PGFSM/version
+were 800/0/2001b, but UVD_STATUS stayed 4 through ten waits; VCPU PC and
+page-fault status stayed zero and the decoder ring timed out. Host cache
+and reset reads were ffffffff. The run did not verify persistence of the new
+PSP-visible map or prove that VCN fetched from BO. PSP still reported its
+authenticated firmware TMR destination f41fa00000. Harvest stayed 3, an
+availability indication rather than an established start switch.
+Pico verified 1858/1858 substitutions across two BIOS passes, with fault,
+mismatch, late-decision and RX-stall zero. RAM-only ROM SHA
+c1064547359793e27904a7c97800fe5f2636007cc9ed419193eeef913e7fa51a;
+UF2 SHA 0922b436f613cfa9af982a505b752232527fb8ba18164cfe1f6779693c3915bb.
+Journal/dmesg SHA256: ccaefee5ebe1cf141dc97500acdc7d5ac64216bfe44fe5e8b38dbf37aed20587,
+56446df61c696d27da29ba0a9f211fa9ce2b4ae05cb254662c8cdef4871531a6.
+No BIOS EEPROM or Pico QSPI write. Normal boot
+d58beb90-cb96-41cf-a83b-a643495fcd01 has amdgpu bound, /boot ro,
+no diagnostic GRUB entry, Pico CS-PASS v2 armed, Pi timer inactive.
+Next: delayed PSP check of all sixteen BO cache-window words before replay.
+
+Signed PSP read-attribute mapping control (2026-09-29)
+-----------------------------------------------------
+The signed driver's ordinary read-map call at e0e734 passes helper attribute
+0xffffffff, unlike the prior probe's 0xfffffffe. A new RAM-only hook used
+0xffffffff for the PSP bookkeeping address f400162ec0 at the same delayed
+point. Mapping still returned nonzero with low28=0xf, before any mapped
+payload word was read. Thus the attribute difference alone does not explain
+the old control failure; the TMR firmware bytes remain unobserved. A matching
+firmware-address image passed offline checks but was not run because the
+control failed. Ten native cases passed for each new image and both prior
+images. Pico verified 2090/2090 substitutions across two BIOS passes with
+fault/mismatch/late/stall zero. PSP LOAD_IP_FW remained ret0/status0;
+UVD_STATUS stayed 4. Control signed ROM SHA
+07743ae65659b1dcc24c2dbd765379626f33d81c962a10ce75c367f69726a45b;
+no-flash UF2 SHA 12556daf8f0912617274fbddf2b81f731ceda0a1272c3ea9f5c5978739067b29.
+Journal/dmesg SHA256: 2f2ab5912cdea526cc1530f7ac199c636f6540d45dcb2d8b0653a1fe3cd61010,
+ae7b4513e957586758d727cf7ce8326fdaa00d219c84853c177ef1e1badbe2e8.
+No BIOS EEPROM or Pico QSPI write. Normal Fedora boot
+5a579a67-f939-4bc4-ae7d-5fdf0a75709b has amdgpu bound, /boot ro,
+no diagnostic GRUB entry, Pico CS-PASS v2 armed, Pi timer inactive.
+
+PSP VCN TMR mapping control (2026-09-29)
+----------------------------------------
+A RAM-only signed PSP hook asked its mapping helper to read the VCN firmware
+page at f41fa00000 after the first VCPU wait. It returned a nonzero value
+whose preserved low 28 bits were 0xf, before any firmware word was read.
+A matched control at PSP bookkeeping address f400162ec0, used by the
+signed driver in another context, returned the same low28=0xf at this
+delayed call site. Thus this standalone helper call does not distinguish
+missing firmware from mapping context, permission, argument or timing.
+The first powered LOAD_IP_FW still returned success; UVD_STATUS remained 4.
+Each target passed ten native ARM cases. Pico verified 2086/2086 and
+2090/2090 substitutions across two passes, fault/mismatch/late/stall zero.
+Corrected firmware-address journal/dmesg SHA256:
+b0ff5bc917107480f5b22895744500fbedb2f9481dd5157b91b106f93fc1fcea,
+ce522c1e82c348cc73e7480f935eaa22013ac139df973eb669c057c656eb40ae.
+Bookkeeping control journal/dmesg SHA256:
+556015a15a248d6bd2b7a420ad21f8e87e28a22e6a98b8f036a350fad75055e6,
+40e92e75a94ad68a31679ae708a23445c6c0a72d8164f626b671cbf4c00121b4.
+No BIOS EEPROM or Pico QSPI write. Normal Fedora boot
+e8d08497-33f8-4f87-befb-d26a04cd0d98 has amdgpu bound, /boot ro,
+no diagnostic GRUB entry, Pico CS-PASS v2 armed in SRAM, Pi timer inactive.
+
+Delayed PSP MPC mux comparison (2026-09-29)
+-------------------------------------------
+After the first VCPU wait and before any second map replay, a guarded,
+RAM-only PSP hook compared all three VCPU MPC mux words at full width.
+MUXA0 and MUXB0 matched Linux's programmed 0x040c2040, and MUX matched
+0x88; the signed hook returned 0x72000003. The first powered PSP firmware
+load succeeded, but UVD_STATUS remained 4 and no VCPU-ready bit or decoded
+frame appeared. This narrows the gap to firmware fetch, another enable or
+isolation control, or implementation availability. It does not show
+CC_UVD_HARVESTING=3 to be a writable start switch. Ten native instruction
+cases passed; Pico verified 2010/2010 substitutions across two BIOS passes,
+with fault/mismatch/late/stall zero. Journal and dmesg SHA256 respectively:
+b31db302b86ecbc39b5faebb42962aa2e14382851308133f11f37021ba0771f6 and
+8e2f6858b5063d34b018ebe4a2473e27a02827df0df9c007980e642221d4d87d.
+RAM-only ROM SHA256 285fce3e27b9f563723adcdf3a30185de5a645e5e9ff3828e9d29ee55a44720a;
+Pico UF2 SHA256 270712866eaef223123b2af65fdd8c1f873bdc4faade4505b6cfb19653bc9dd3.
+No BIOS EEPROM or Pico QSPI write. Normal Fedora boot
+ae0f6a38-2e7c-4be3-af63-b9cb9d45dac1 has amdgpu bound, /boot ro,
+no diagnostic GRUB entry, Pico CS-PASS v2 armed in SRAM, Pi timer inactive.
+
+Delayed PSP MPC control read (2026-09-29)
+-----------------------------------------
+The VCN 2.0 startup reads UVD_MPC_CNTL and writes replacement mode 2 by
+read-modify-write. A poisoned all-ones host read could have propagated
+invalid bits. A signed RAM-only PSP hook read address 0x200dc after the
+first VCPU wait, before any second-call map replay, and reported low28=0x10.
+The all-ones propagation hypothesis would have returned low28=0xfffffd7.
+That specific failure was not observed; upper four bits, MPC mux settings,
+firmware fetch and VCPU execution remain unverified. UVD_STATUS stayed 4.
+The reused kernel runner labels this event cache-size0, but the hook read
+MPC_CNTL. Twelve native cases and 1934/1934 Pico substitutions across two
+BIOS passes passed with fault/mismatch/stall/late decision all zero.
+Signed ROM SHA 9fe48b51ae7a16888f8a906266fcaf51a367ef63d9e00079339ce1ce691a42ab;
+Pico no-flash UF2 SHA a43f302da93e9e602cac7fd2ad39b350aceb3cc3470471ed670cf5abe1804f8d.
+Journal and kernel SHA respectively
+7af4e1de02a00af3d293e74e02953c4b83042953139fdeac69d5ce3a8d494175 and
+36a0ddeae19f73704f83e89c62e68ccb68ca438cb0eafd106369be02c9ca6950;
+files are output/video-decode-20260922/results/bc250-vcn-delayed-mpc-premap-20260929.*.
+No BIOS EEPROM or Pico QSPI write. Pico CS-PASS v2 restored in SRAM;
+normal Fedora boot a1f29978-e69a-4df7-8155-03e35733675d has amdgpu bound,
+/boot ro, no diagnostic GRUB entry and Pi recovery timer inactive.
+
+VCN2 packaged firmware identity control (2026-09-29)
+----------------------------------------------------
+On the running BC250 Fedora image, navi14_vcn.bin.xz and navi12_vcn.bin.xz
+are symlinks to navi10_vcn.bin.xz; renoir_vcn.bin.xz aliases
+green_sardine_vcn.bin.xz. Decompressed Navi10 and Green Sardine files are
+both 405952 bytes and differ at exactly one byte, header offset 14: IP
+minor version 0 versus 2. The payload and signature area are identical.
+Navi10 SHA256 a9ec155695b5020009d3986cfd4ebd00ad9ddbd12ac7e5fa15ec86b8a571dbe5;
+Green Sardine SHA256 ff1cbd575ae59ee317c6027ba57be7fc8861ac51fd6da44411ec8a1bbdfc7f26.
+Changing among these packaged names cannot test a different VCN program.
+This was a read-only comparison; no board reset or flash write.
+
+Delayed PSP full cache-map persistence control (2026-09-29)
+----------------------------------------------------------
+The signed RAM-only PSP hook compared all 16 firmware, stack, context and
+shared-memory VCPU cache-window words at full 32-bit width after the first
+Linux VCPU wait and before the second PSP call replayed any window write.
+It returned diagnostic status 70000010: all 16 matched the first powered
+PSP load's values. The seventeenth GFX10_ADDR_CONFIG word was excluded
+because bit 0x40 is masked on readback. The reused kernel runner labels
+the event cache-size0, but this signed hook compared all 16 windows.
+UVD_STATUS stayed 4 with no VCPU-ready or decoded frame. This excludes
+loss of the PSP-visible map over the observed wait; firmware fetch,
+execution and upstream enable/isolation remain unproven. The user reports
+that VCN is not fused off, so continue investigating activation.
+Twenty-three native instruction cases and 1978/1978 Pico substitutions
+over two BIOS passes passed with zero fault/mismatch/stall/late decision.
+Signed ROM SHA 5afbf628d2ac39c90c8e2c9b802e94f5b661ac970c6978b8c17c1d0b677e1366;
+Pico no-flash UF2 SHA 29c9ce8694345c40184d684fc6107c5654139e370d56deb61fc05314282fdee3.
+Journal and kernel SHA respectively
+c275d03801f81ca21bf68364ca5fa6e830b1702866c352186c303823b93bb526 and
+afa55d42031262ca32bc2294c4bd1ca367fd2bd10a3d2dade735f7113736f2f3;
+files are output/video-decode-20260922/results/bc250-vcn-delayed-map-premap-20260929.*.
+No BIOS EEPROM or Pico QSPI write. Pico CS-PASS v2 rearmed in SRAM;
+normal Fedora boot cf21392a-bff7-4f74-829c-d747bd9115da has amdgpu bound,
+/boot ro, no diagnostic GRUB entry and Pi recovery timer inactive.
+
+Delayed PSP firmware BAR persistence control (2026-09-29)
+---------------------------------------------------------
+A second signed RAM-only pre-map hook sampled PSP UVD_VCPU_CACHE_BAR_LOW0
+at 0x2107c after the first full Linux VCPU wait and before the second PSP
+call's 17 cache-window writes. It returned low28=0x0fa00000, matching the
+low 28 bits of the first successful PSP load's BAR low value 0x1fa00000.
+The reused kernel runner labels the event cache-size0, but the signed hook
+sampled BAR low on this boot. UVD_STATUS stayed 4 and no VCPU-ready bit or
+decoded frame appeared. BAR low and cache size retained their observed
+values; upper BAR bits, the other map words, fetch and execution are not
+established. Ten native instruction cases and 1934/1934 Pico substitutions
+over two BIOS passes passed with zero fault/mismatch/stall/late decision.
+Signed ROM SHA e23083ed27a5bebdd1a3e6decab8aa29b33c6a4a0ae2c0ea2ce546fcc9ba084e;
+Pico no-flash UF2 SHA 4ce2827f00dc4ac6919d3e3efd965d949a9573565b15489f7cb1317654d31377.
+Journal and kernel SHA respectively
+8a64f31848d95875e51edf5d5add48b89b1f4898f54fd293b937121ce0ca73c5 and
+e5622d02f3e5b21a33a5c0c86d3573b4bc776f84caa59ae28eac7d9c353139f2;
+files are output/video-decode-20260922/results/bc250-vcn-delayed-barlow-premap-20260929.*.
+No BIOS EEPROM or Pico QSPI write. Pico CS-PASS v2 restored in SRAM;
+normal Fedora boot 2ba7b9a9-7819-420e-971c-4e85a0daf1e7 has amdgpu bound,
+/boot ro, no diagnostic GRUB entry and Pi recovery timer inactive.
+The full cache-map pre-replay comparison above found all 16 words retained.
+Next investigate firmware fetch and upstream isolation. Do not treat
+harvest 3 as a proven writable start switch.
+
+Delayed PSP cache-size persistence control (2026-09-29)
+------------------------------------------------------
+The earlier delayed cache-size hook ran after the second call replayed all
+17 cache-window writes, so it could not establish persistence. A corrected
+signed RAM-only hook sampled PSP UVD_VCPU_CACHE_SIZE0 at 0x2010c after one
+full Linux VCPU wait and BEFORE the second call's cache-map loop. The first
+powered PSP load returned ret0/status0. The delayed pre-map read returned
+0x64000, matching the first load's firmware-cache size. UVD_STATUS stayed 4
+and VCPU-ready never appeared. Thus this one size word survived the wait;
+other map words, fetch and VCPU execution are still unproven. Ten native
+instruction cases and 1934/1934 physical Pico substitutions over two BIOS
+passes passed with zero fault/mismatch/stall/late decision. Signed ROM SHA
+03fad9151af973ea93bf9f384bf70e0703aa847a31bd54567fe458bfbe211fe5;
+Pico no-flash UF2 SHA
+14918996cbd1ee3a3df2ed5415cfe6b9bd4b9e0ae12cc9cf0a938903433c450b.
+Journal and kernel SHA respectively
+aa2ca86269207ff8396b7bfde326d1e35f196aca3a06599e122d5209717f1ffb and
+97d98c1b3b965d8b5d5549b95e0efbdbceb2d9ab1589e2fea9a6fb94f636814f;
+files are output/video-decode-20260922/results/bc250-vcn-delayed-cache-premap-20260929.*.
+No BIOS EEPROM or Pico QSPI write. Pico CS-PASS v2 restored in SRAM;
+normal Fedora boot 31482e99-748c-48e1-9e60-927e4ab9ce75 has amdgpu bound,
+/boot ro, no diagnostic GRUB entry and Pi recovery timer inactive.
+
+Delayed PSP reset read after first VCPU wait (2026-09-29)
+---------------------------------------------------------
+Three RAM-only delayed-read profiles that moved the PSP cache-address table
+to e19010 stalled the first powered LOAD_IP_FW (ret -22, response status 0).
+A relocation-only signed control changed no executable instructions and
+stalled at the same step. An earlier writable-data map table at e19010 had
+also failed, while the original RX-region address and value tables at
+e17d98/e17fb8 worked. The offline model did not capture this live constraint.
+
+A revised signed RAM-only hook left both tables untouched, placed only 72
+bytes of dispatch code in the pinned e00200 RX cave, and passed nine native
+PSP instruction cases. The Pico verified 1926/1926 substitutions across two
+BIOS passes, with fault/mismatch/late decision/RX stall all zero. The first
+powered PSP VCN firmware reload returned ret0/status0. After one full Linux
+VCPU wait, UVD_STATUS was still 4; a second scratch-marked PSP call read
+UVD_SOFT_RESET without writing it and reported low28=0. VCPU reset bit3 and
+VCLK reset-status bit19 had not reasserted during the observed interval.
+Host conventional reset read remained ffffffff and cannot describe the PSP
+latch. VCPU-ready never appeared; no frame decoded. Harvest 3 remains an
+availability clue, not a demonstrated start switch. Next isolate firmware
+fetch, a different reset/clock/isolation gate, or a disabled implementation.
+Signed RAM-only ROM SHA
+858ab76da6cab427fe83df1ff3b906f3a8fe5eb0e75d6ac8a545b23feb0461a0;
+Pico no-flash UF2 SHA
+1eac254c03fb7796a6376740ee80c59ab1c78aa44913d666e106a32d9ac3bc44.
+Journal and kernel hashes respectively
+c018d33963325ddb6dd058a87d427275c891dae17d95e1a17a194a44f892afb2 and
+b0d0fbcf8cfbc86ee22950bc7595bcd55d602a36e04fcab827417e0beb37b3e0;
+files are output/video-decode-20260922/results/bc250-vcn-delayed-reset-code-20260929.*.
+No BIOS EEPROM or Pico QSPI write. Pico CS-PASS v2 restored in SRAM;
+normal Fedora boot f9330749-003d-404b-bc7e-a46343dd5a17 has amdgpu bound,
+/boot ro, no diagnostic GRUB entry and Pi recovery timer inactive.
+
+Harvest status versus VCN start, DPG-bank control (2026-09-29)
+------------------------------------------------------------
+CC_UVD_HARVESTING=3 names MMSCH_DISABLE and UVD_DISABLE in the VCN 2.0
+header. It predates Linux VCN startup, and the local power sequence exposed
+the VCN version while harvest stayed 3. Guarded writes did not change it.
+This is a status/availability clue, not a demonstrated start control or
+proof of a physical fuse. The driver actually starts VCN by enabling local
+power and clocks, programming VCPU firmware memory and releasing reset.
+The read-only DPG-bank survey found alternate cache BAR/offset/VMID words
+all zero before and after PSP, with DPG mode clear. Conventional cache-low
+and reset host reads stayed ffffffff; the phase-matched scratch word still
+matched PSP's low 28 read bits. UVD_STATUS remained the driver's busy 4 and
+no frame decoded. The compiled diagnostic driver uses the PSP firmware
+path: its host startup attempts to map the same TMR address f41fa00000 as
+the signed PSP replay. The earlier direct-BO/TMR mismatch claim came from
+reading the unswapped baseline amdgpu_vcn.c rather than the build script's
+PSP-path overlay. The generic "direct-load path enabled" log message does
+not identify the compiled load path. We have not established that the VCPU
+can fetch the TMR image or why host cache/reset reads stay ffffffff.
+Module SHA256
+f39444e89677689f359b31925697481fe9a999c3e53fe5eb275a6605557c1a85.
+Evidence: output/pico2/tos-entry-gasket12-prepspmap-vcn-scratch-20260929/
+physical-dpg-survey/{vcn-runner.jsonl,dmesg.log,pico-usb.log} SHA256
+respectively 8a37f8bdb1f714546c7ff0668fd2fa848b4b393cc8e131ed3a5eec23be82a682,
+6a0cd13b90260cb3a66e0480bc25ab5063744f2d58ed797c5fda9ee27d63c4f5,
+f3826ecb069d02227bed52fb940929ffe632bf84f6e04f8889380e3c1800065f.
+Pico verified 3308/3308 RAM-only substitutions across four BIOS passes;
+zero fault/mismatch/stall/late decision. No BIOS EEPROM or Pico QSPI write.
+Diagnostic GRUB cleaned; CS-PASS v2 restored in SRAM. Normal Fedora boot
+1368e887-01dc-4869-b59d-cf3db1a7db4e has amdgpu bound, /boot ro and
+Pi recovery timer inactive.
+
+UVDW local power control versus JRBC (2026-09-29)
+-------------------------------------------------
+JPEG-only PGFSM status 00200000 showed UVDW status field 2 (off). An isolated,
+guarded test requested UVDW on by changing PGFSM config 00400000 to
+00500000. Status immediately became 00000000, proving that this local power
+control worked. JRBC scratch still read 0 -> 0 -> 0 after a16bc250 was
+written; JRBC ring CNTL/SIZE/WPTR were 0 and the ring timed out. Decoder
+scratch still read 0 -> 5a13c0de -> 0. UVDW power alone does not make JRBC
+accessible; a separate route, gate, mapping or implementation issue remains.
+Module SHA256 cc6b465448eb9df13bffe589eebd17c95fb0482d2e575e09021fe3bcdfbf2ce0.
+Evidence: output/pico2/jpeg-uvdw-combined-20260929/{pico-usb.log,
+jpeg-runner.jsonl,dmesg.log} SHA256 respectively
+5328e1067b7bbc99b4f1170d9ea6f995c61f2d39b40a76a98f39f17e965e59d7,
+6b98bafcecea2aabb20c91f0bbfde7a3a826bacbbb1d70d52cfbc98d6428e6c3,
+4b9f55666a61cc26690f5e54ed3d36766cd29d0fd1c6627081453a72d003dd7f.
+Pico verified 1558/1558 substitutions, zero fault/mismatch/late decision/RX
+stall. No BIOS EEPROM or Pico QSPI write, no frame. Diagnostic GRUB cleaned;
+CS-PASS v2 restored in SRAM; normal boot
+c4b24c9c-1609-4f5b-9e55-dd82c20bc98d has amdgpu bound, /boot ro, and Pi
+recovery timer inactive.
+
+JRBC scratch register control (2026-09-29)
+-------------------------------------------
+Under the verified combined early/late RAM-only Pico policy, an opt-in JPEG
+module wrote and restored two documented scratch words after the JPEG power
+request. The JPEG decoder word at 0x1e224 read 0 -> 5a13c0de -> 0; the JRBC
+word at 0x1e450 read 0 -> 0 -> 0 despite writing a16bc250. The JRBC ring
+control/size/write-pointer registers also stayed zero and the ring timed out.
+The LMI ring BAR remained writable at 0x1e598, and documented JPEG/JRBBM
+clock/reset indicators looked active/deasserted. This localizes the fault to
+the JRBC subblock access/implementation; it does not identify its upstream
+isolation or prove a physical fuse. Harvest 3 remains a disable indication,
+not a known start switch. Next compare a PSP read of the JRBC scratch word
+with this host view or locate the route/isolation control. The isolated module
+SHA256 is 9123b4ed385203e19449c5e18466171fc9bb7e6e29409a5b881daac7eb663000.
+Evidence: output/pico2/jpeg-scratch-combined-20260929/{pico-usb.log,
+jpeg-runner.jsonl,dmesg.log} SHA256 respectively
+61043cd34eb884a4c52c4be6ab9c88f2b14a01f57c114fe640cf9b59a5626f69,
+f3f9b9693dc36757f46bdfc553d30398a7370ec764e5e59820ebba82c2c8c060,
+067cc4dc7dd8c625e4d8b4557eb0a9d33b99fdec257ffdfd36d12e1d13a20326.
+Pico verified 1558/1558 substitutions, no fault/mismatch/late decision/RX
+stall. No BIOS EEPROM or Pico QSPI write, no frame. Diagnostic GRUB cleaned;
+CS-PASS v2 restored in SRAM; normal boot
+bef7fc63-e767-4d39-b2a9-b773133243b5 has amdgpu bound, /boot ro, and Pi
+recovery timer inactive.
+
+Harvest indication and JPEG MMIO ring isolation (2026-09-29)
+----------------------------------------------------------
+CC_UVD_HARVESTING=3 is a disable/availability indication, not an established
+writable start control. VCN 2.0 startup does not use it, guarded writes of
+zero read back 3, and combined early/late client-12 policy powered VCN
+PGFSM/power/version to 0/800/2001b while harvest stayed 3. This does not
+prove physical read-only behavior or exclude an upstream disable source
+affecting VCPU execution. VCN VCPU-ready bit1 remains absent.
+
+Under the same RAM-only Pico policy, the JPEG-only probe got live PGFSM
+config/status 0/00200000, UVDJ-on request readback 00400000, JPEG power 0,
+but ring jpeg_dec timed out. Repeating with MMIO instead of doorbell WPTR
+also timed out: software WPTR 10, hardware RPTR/WPTR 0, pitch unchanged,
+JMI reset bit clear, BAR readback 00000000:00264000. A doorbell-only failure
+is ruled out. Cyan Skillfish's pinned SMU functions omit VCN/JPEG enable
+callbacks; generic Linux requests return success without a power command.
+Van Gogh has separate power-up messages, but Cyan Skillfish's message map
+does not list them. This is an upstream-path candidate, not authorization to
+use another chip's opcode. A third, bounded MMIO readback diagnostic found
+JRBC WPTR=0 immediately after writing 0x10; JRBC CNTL/SIZE both read 0
+despite nonzero initialization. BAR read back 0x264000, matching the GPU
+ring address, and JMI/clock-control registers were readable. Ring test
+again timed out. This points to a narrower JRBC register/startup condition,
+not a blanket JPEG base-address failure. A fourth bounded JPEG trial sampled
+the documented clock/reset indicators before and after ring test. Both reads
+gave JPEG_SOFT_RESET_STATUS=0, UVD_JRBC_SOFT_RESET=0,
+JPEG_SOFT_RESET2=0, UVD_JPEG_POWER_STATUS=0, and JPEG_CGC_STATUS=1cf.
+The defined bits report JPEG decode and JRBBM VCLK/SCLK active; JRBC CNTL,
+SIZE and WPTR still read0, and the ring timed out. Thus the documented
+clock/reset status does not account for the ring failure. It does not prove
+every internal clock/reset or physical block is functional. Next isolate
+JRBC register-path permission/availability, ideally by a PSP-visible
+comparison; for VCN, measure firmware fetch and VCPU ready. Evidence:
+output/pico2/jpeg-early-late-combined-20260929/dmesg.log SHA256
+509692673bfd2236463b930c6c08a6b36c0e9a8c4f7cbbfa37d97b32e2813cc6,
+output/pico2/jpeg-mmio-combined-20260929/dmesg.log SHA256
+8a7d3e939d76b7076a26a6b6b1df436085a8db47a8c801f0660f0cd58b85ef87.
+Third trial output/pico2/jpeg-readback-combined-20260929/{pico-usb.log,
+jpeg-runner.jsonl,dmesg.log} SHA256 respectively
+45faf96eefb88fa569b6cdadada9ec5509d571bb2ab24fcb3aeaaf6c7e1a8f85,
+884218cce7c47facbfeb09933be4ab57a3afe79e78f95d0d4f3e7094bfe8acc4,
+43d6cabc1fc7638073970cac95645f91237250ce441d427b6ed61019584c074b.
+Fourth trial output/pico2/jpeg-reset-clock-combined-20260929/{pico-usb.log,
+jpeg-runner.jsonl,dmesg.log} SHA256 respectively
+aef1d15913a9682fdbbd9e08c9e4f23b4fc2fc585bc3d7f85c527172c3e942e5,
+7554b8835a1ef030218be36ddc8e5a9c1b447d0f27f48dcc2db323f06a97f71e,
+54694894e3161b5cd772274359a3c0d7acf44a0ada57213714ac8763b79a3b32.
+Pico verified 1558/1558 substitutions in all four boots, zero fault/
+mismatch/late decision/RX stall. No BIOS EEPROM or Pico QSPI write, no frame.
+Diagnostic entry cleaned; CS-PASS v2 restored in SRAM; normal boot
+9ff6237f-410f-45ea-8ea1-ace333b67bb3 has amdgpu bound, /boot ro, and Pi
+recovery timer inactive.
+
+PSP SETUP_TMR brackets aperture transition (2026-09-29 02:34)
+------------------------------------------------------------
+Read-only PSP phase snapshots under same verified Pico profile found raw
+VCN PGFSM_STATUS, POWER_STATUS and VERSION all ffffffff after PSP ring
+creation, firmware reservation and TMR buffer allocation. Immediately after
+psp_tmr_load they were 00200000, 801 and deadbeef. BC250 submitted
+GFX_CMD_ID_SETUP_TMR with a real TMR BO in that call; the measurement does
+not prove the PSP's internal action or exclude delayed effects of an
+earlier command. Subsequent non-PSP firmware and IP init made no change.
+VCN local static power-gating release changed PGFSM to0, power to800 and
+version to2001b with harvest still3. VCPU ready remained absent, host
+reset/cache reads ffffffff, and decode ring timed out. Harvest3 is not a
+switch that must go to0 for those tile-power transitions; its role in
+VCPU startup remains unproven. Evidence:
+results/vcn-psp-phase-active-20260929.jsonl SHA256
+d25fe5c271eb4fcbade12e808e4a034061ff5ac770f7d72445afee0547ed7b79
+and matching .dmesg SHA256
+07addbec8113af12cdce15fe8461ea478f22f26342e88a4ed1a845955e19b315.
+Diagnostic boot f647d903-f5e8-4576-a889-f54509269b3a, Pico substitutions
+1402/1402 with zero fault. GRUB entry consumed/cleaned, Pico CS-PASS v2
+restored in SRAM, normal Fedora boot e26c4953-89c6-4c08-a660-b2bf18b76e28
+verified (amdgpu bound, schedutil, DPM auto, /boot ro), Pi timer inactive.
+No BIOS EEPROM/Pico QSPI write or decoded frame.
+
+PSP hardware init opens partial VCN aperture (2026-09-29 02:23)
+------------------------------------------------------------
+Guarded read-only snapshots around GPU IP hardware init ran with the same
+RAM-only Pico profile, verifying 1402/1402 substitutions with zero faults.
+PGFSM_STATUS, POWER_STATUS and VERSION were all ffffffff immediately before
+psp_hw_init. Immediately after it they were 00200000, 801 and deadbeef.
+The following SMU firmware call and SMU/display/GFX/SDMA hw_init stages
+made no further change. VCN's local static power-gating release later
+yielded PGFSM0, power800 and version2001b, but VCPU ready bit remained clear
+and decode ring timed out. This brackets the aperture transition inside
+PSP hardware init; it does not yet isolate ring setup, psp_hw_start, or
+non-PSP firmware loading. Harvest3 is not a basic tile power switch.
+Evidence: results/vcn-ip-phase-active-20260929.jsonl SHA256
+dda802c1ffcca67a7b8f31273707bcfd8b7fd8009a4f2219551141acc35b897f
+and matching .dmesg SHA256
+41f47f3e2b65a66b01547cf44f971d6e831f62cf87eff4b9900a9fe5a7e49c5f.
+Diagnostic boot ba3a466a-65f8-4ce6-a8b8-bbabad36b041. During recovery
+Pico stopped enumerating; we stopped the Pi timer, restarted Pi, and loaded
+known CS-PASS v2 in SRAM. GRUB entry cleaned, normal Fedora boot
+e32a0c03-5b7c-43d2-ae6d-725d6c92bbd3 verified (amdgpu bound,
+schedutil, DPM auto, /boot ro); Pi timer inactive. No BIOS EEPROM/Pico QSPI
+write or decoded frame.
+
+Phase-matched VCN startup test (2026-09-29 02:10)
+------------------------------------------------
+Six read-only snapshots in the pinned direct-BO VCN module ran under the
+exact RAM-only Pico profile that previously exposed the VCN register file.
+Pico verified 1402/1402 substitutions over two BIOS passes with zero
+mismatch, late decision, RX stall or fault. All sampled VCN registers were
+ffffffff through software init/resume. At vcn_v2_0_start entry, after other
+GPU IP blocks had initialized, PGFSM_STATUS=00200000, POWER_STATUS=801 and
+VERSION=deadbeef. Generic SMU VCN enable changed nothing. Local
+vcn_v2_0_disable_static_power_gating changed PGFSM_STATUS to0, power to800,
+and version to2001b. CC_UVD_HARVESTING remained3 while these powered
+registers responded. Thus 3 is not the bit value needed for basic tile
+power-up; its producer/causal role and physical writability remain unknown.
+Host reset/cache reads stayed ffffffff, UVD_STATUS stayed4 without VCPU
+ready, and ring startup timed out. Matched CS-PASS control trials (phase
+module and older direct BO) saw all-ones VCN register reads, linking the
+responsive aperture to the signed Pico profile in these tests. Next,
+bracket PSP/SMU and IP hardware init between software resume and VCN start,
+then compare PSP-side reset/cache with host reads after local power-up.
+Evidence: results/vcn-startup-phase-active-20260929.jsonl SHA256
+788571bf257be7bc7e63c48680eef8210b13a75d90e7bc1cc1522aed6e3ea4f9
+and matching .dmesg SHA256
+466e44cccb2fde9991c088543e19a7e164a710db6fdb423cce20884e89d98c38.
+Diagnostic boot 569545b2-f3ed-47a0-b4de-b22a6331f282. GRUB entry cleaned;
+Pico restored to CS-PASS v2 in SRAM, cold cycle restored normal Fedora boot
+b9c16e83-47ff-49bf-af34-31c5667c6fb2 (amdgpu bound, schedutil, DPM auto,
+/boot ro), Pi timer inactive. No BIOS EEPROM/Pico QSPI write or decoded frame.
+
+Harvest status versus startup control; JPEG power test (2026-09-29 01:45)
+-----------------------------------------------------------------------
+CC_UVD_HARVESTING=3 is an observed disable/availability indication, not an
+established writable start control. It was 3 before Linux VCN startup; PSP
+and powered-host write-zero/readback attempts left it 3. Pinned VCN 2.0
+startup neither reads nor writes it. The pinned Cyan Skillfish SMU callbacks
+for VCN and JPEG power are absent, and generic amdgpu returns success when
+these callbacks are null. SMU 11.8's public message table has no named VCN
+or JPEG power-up command. We should identify the BC250 upstream power path,
+not assume another chip's opcode or force the harvest readback.
+
+JPEG-only module (no VCPU firmware request) ran after native 1250 MHz
+VCLK/code16 and the tested domain-6 slot/gate/power sequence. Standard JPEG
+power-up attempted UVDJ on through UVD_PGFSM_CONFIG, but the wait timed
+out, JPEG ring failed and amdgpu did not bind. The first trial printed
+*masked* PGFSM_STATUS bits22-23 as 00c00000. We initially called that an
+off tile; this overinterpreted the log. The second boot's added raw reads
+showed PGFSM_CONFIG and STATUS were both ffffffff before request, just after
+the attempted write and at timeout. The masked 00c00000 can result from a
+full all-ones read. That makes the host JPEG register aperture inaccessible
+or unresponsive in the second boot; it does not establish a fused-off tile
+or the source of upstream gating. The masked status 3 is separate from
+harvest 3. Offline source check: JPEG_HWIP aliases VCN_HWIP; Cyan Skillfish
+maps VCN to UVD0_BASE, and PGFSM uses its nonzero segment 1 (0x7e00), so
+this is not an absent JPEG base pointer. Find the actual BC250
+power/isolation and host-aperture path;
+require a non-all-ones raw read before trying ring startup again. Evidence:
+results/jpeg-only-native-20260929.jsonl (SHA256
+9aebaf987536ccd675728d154090f7761d198f41cdc0d661a0dc90051403f246)
+and results/jpeg-only-native-dmesg-20260929.txt (SHA256
+98b9ac8b21445dd74f2981366f214f8b6e9c44973ee8776e8f96f9df2589e108).
+Diagnostic boot 91ba45f6-1f10-4e9d-be0b-cf4819fe9262. One-time GRUB entry
+consumed and removed; Pi timer inactive. Normal boot
+23702a59-4b6e-4d29-844e-687a66a5fb09: amdgpu bound, governor active,
+DPM auto, /boot ro. No BIOS EEPROM/Pico QSPI write or decoded frame.
+Second JPEG readback test: results/jpeg-pg-readback-20260929.jsonl
+(SHA256 bdc0b70cc6b12db35236e1048dfd1485b1989c3977c5aecd8b7e212b41ad2582)
+and results/jpeg-pg-readback-20260929.dmesg
+(SHA256 321981cad66a94dd746d0476cf5c5d918a4c7172026889d28f01a3ccaccd2b7a),
+diagnostic boot 5aa7fe6f-c25e-4ccf-9243-58028cb6df97.
+Consumed GRUB entry removed; separate cold cycle restored normal Fedora
+boot 2404ff70-bf48-4cbe-aaf6-94122c95ba40 with amdgpu bound, governor
+active, DPM auto, /boot ro, no diagnostic entry and Pi timer inactive.
+No BIOS EEPROM/Pico QSPI flash write; no decoded frame.
+
+Direct firmware BO with native VCLK (2026-09-29 00:31)
+-----------------------------------------------------
+Guarded opt-in diagnostic copied the declared microcode payload from pinned
+405952-byte navi10_vcn.bin into a regular GPU BO at 0xf41fc00000, bypassing
+the PSP TMR firmware source.
+Native SMU callback applied VCLK 1250 MHz/code16, and the three domain-6
+slots, gate and power commands took their tested values. VCN version 2001b,
+power 800 and PGFSM 0 responded, but host cache/reset reads were still
+ffffffff, UVD_STATUS stayed 4 through ten waits, decode ring timed out and
+amdgpu did not bind. Harvest remained 3. This BO substitution is insufficient
+even under native VCLK; it does not prove firmware fetch or exclude a host
+aperture/reset/isolation problem. VCPU PC=0 is inconclusive because trace
+enable was not proven to latch. Evidence: results/native-direct-bo-20260929.jsonl
+(SHA256 867f9a69e1b1c579d27797619395eaab0d7827a6fcca8da71db16cbac807b2f6)
+and results/native-direct-bo-dmesg-20260929.txt. Diagnostic boot was
+4018fab4-02a7-41e9-b116-d524410ec3cb. Pico RAM substitutions completed
+1402/1402 over two passes, fault/mismatch/RX stall zero. After a hash-guarded
+cleanup of the consumed GRUB entry and second PDU hard cycle, normal Fedora
+boot 73a2a974-9bc7-4db2-9fe7-dd523ff7f081 has amdgpu bound, governor
+active, DPM auto, /boot ro and Pi fallback timer stopped. No BIOS EEPROM or
+Pico QSPI flash write; no decoded frame.
+
+Native VCLK versus candidate clock-enable (2026-09-29 00:12)
+------------------------------------------------------------
+Normal-boot root-SMN reads gave Van Gogh-derived enable candidate 0116f200=0,
+VCN hardware clock code 6d128=0 and known-live GFX control 115a820=48140880.
+The guarded native SMU callback applied VCLK 1250 MHz/code16, but candidate
+0116f200 stayed0. A preflighted write-only SMU SRAM helper then directly
+stored1 to 0116f200 while VCLK was active. It returned success, but two
+independent root-SMN read sweeps still saw0, GFX control unchanged and VCN
+code16. Helper stored0, restored all saved SRAM and passed liveness. Thus
+this specific path has no observed root-visible effect; BC250 semantics or
+mirror fidelity of the Van Gogh address remain unproven. Do not repeat a
+blind write. Full trace: results/clock-enable-after-vclk-live-20260929.jsonl,
+SHA256 9c1d37cc3d599877a598d6dc4dc7650969b3514eca8fd69cf8ca551acd3e9410.
+Pi PDU fallback was armed, outlet8 cold-cycled deliberately, timer canceled.
+Normal Fedora boot0b30e353-070b-4d6f-9e37-71968eb39e1c: amdgpu bound,
+governor active, DPM auto. No BIOS EEPROM/Pico QSPI writes or decoded frame.
+
+Native-clock VCPU reset stability test (2026-09-28 23:39)
+--------------------------------------------------------
+A RAM-only hook replayed the pinned VCN cache map, made one PSP write-zero
+to UVD_SOFT_RESET at 0x20180, then read it 128 consecutive times through
+PSP service 0x7b. The last read was zero; UVD_STATUS still stayed 4 without
+VCPU ready and the decode ring timed out. Native SMU VCLK clock code 16 and
+tested domain gate/power controls were active. This rules out a rapid reset
+reassertion during those reads, not a later reassertion or a separate
+firmware-fetch/isolation problem. The early CC_UVD_HARVESTING=3 source is
+still unknown. Evidence: results/native-reset-stability-20260929.{jsonl,dmesg}.
+The Pico verified 1414/1414 substitutions, fault/mismatch/RX stall zero;
+29 native ARM cases passed and 187 UF2 blocks were all SRAM addresses. The
+new ROM view differs from the previous verified diagnostic only in its
+readback cave, body hash and signatures. Recovered normal Fedora boot
+8e5cc91a-8355-4f3e-adee-716d66b7c255 with amdgpu bound, schedutil,
+DPM auto, /boot ro, CS-PASS v2 armed and Pi timer stopped. No BIOS EEPROM
+or Pico QSPI write; no decoded frame.
+
+MMSCH reset-status readback; harvest is an indication (2026-09-28 23:09)
+---------------------------------------------------------------------
+A RAM-only diagnostic used the proven 52-byte TMR hook, native 1250 MHz VCLK
+request (hardware code 16), tested gates/power and pinned VCN startup. A PSP
+read of UVD_SOFT_RESET2 at byte address 0x1ff98, without first writing it,
+returned 0x00030000 after Linux release and 17 cache-window replays: MMSCH
+VCLK and SCLK reset-status bits 16/17 were set; atomic reset bit 0 was clear.
+Powered VCN showed power 0x800, PGFSM 0, status 4 without VCPU ready; the
+decode ring timed out. The runner journal labels its generic parsed field
+reset_low28, but here it contains SOFT_RESET2, not SOFT_RESET. The Pico
+verified 1402/1402 substitutions, fault 0; the native model passed 28 cases.
+Evidence: results/native-reset2-beforewrite-20260929.{jsonl,dmesg}.
+
+The operational CC_UVD_HARVESTING=3 was present before Linux VCN startup;
+PSP and powered-host write-zero/readback tests left it at 3. The AMD header
+names its two bits MMSCH_DISABLE and UVD_DISABLE, and other amdgpu VCN paths
+read UVD_DISABLE as an availability check. It is not established as a
+writable VCN start command, and its source (fuse, early firmware latch or
+upstream status) is still unknown. The MMSCH reset-status bits may simply
+accompany MMSCH_DISABLE; ordinary VCN 2.0 startup uses the VCPU path. The
+previous UVD_SOFT_RESET result (VCPU reset bit 3 and VCLK status bit 19)
+is more directly relevant. Compare that VCPU reset state across the tested
+SMU power/clock stages and trace BC250's actual control flow. Do not infer
+that forcing status bits low starts the block. Restored normal
+Fedora boot a6329fe6-db36-4bc7-9965-94152bfef2b6 with amdgpu bound,
+schedutil, DPM auto, /boot ro, CS-PASS v2 armed and Pi timer stopped. No BIOS
+EEPROM or Pico QSPI write; no decoded frame.
+
+Native VCLK plus PSP VCPU reset readback (2026-09-28 22:46)
+---------------------------------------------------------
+On a guarded opt-in VCN boot, the native SMU callback applied slot 0x17
+clock code 16 for a 1250 MHz request. With the proven 52-byte TMR hook, the
+PSP read UVD_SOFT_RESET at 0x20180 after Linux's release sequence without
+the diagnostic hook first clearing it. The result was 0x00080008: VCPU soft
+reset bit 3 and VCPU VCLK reset-status bit 19 remained asserted. The hook
+had replayed the pinned VCN memory-window values, so this is a postrelease
+PSP observation rather than a pristine Linux-only state. Host-visible VCN
+version was 0x2001b and power 0x800; UVD_STATUS stayed the driver's BUSY
+value 4 without the VCPU-ready bit. A prior trial's PSP result zero was
+caused by its explicit write-zero before read, and that clear still did not
+start VCN. The first readback build mistakenly used an older 40-byte TMR
+hook and yielded all-ones VCN reads; it is inconclusive. The corrected ROM
+view differs from the proven powered profile only in the readback hook and
+its hashes/signatures. Its 28 native ARM cases passed and the Pico verified
+1402/1402 substitutions with no faults. Evidence:
+results/native-reset-beforewrite-v2-20260928.{jsonl,dmesg} and
+results/native-postrelease-reset-20260928.jsonl. Recovered normal Fedora
+boot 50c0acbb-fabc-4fb0-9640-be56480064f0 with amdgpu bound, governor
+active, DPM auto, /boot ro, and CS-pass Pico relay. No BIOS EEPROM or Pico
+QSPI write; no decoded frame. CC_UVD_HARVESTING=3 remains an availability
+indication, not an established start control. Next: identify why VCPU reset
+distribution or its firmware-fetch path remains blocked despite power,
+clock, cache mapping and explicit reset release.
+
+Native SMU VCN clock request and recovery (2026-09-28 21:08)
+----------------------------------------------------------
+Pinned live Q3 0x1d preflight matched firmware/table/slot capture. An index-16
+zero-request no-op returned status 1 and changed no measured state. The
+offline native-clock rollback model passed three cases. The live trial
+temporarily set five other zero requests to the skip sentinel, changed the
+clock-table generation request, and sent index 16 / 1250 MHz for VCN slot
+0x17. Q3 returned status 1 and echoed 0x1004e2. Requested float became
+1250.0, but applied float stayed 0; VCN slot cache, physical clock code and
+GPU VCLK all stayed 0. The generation pair read 1/1. Therefore the mailbox
+ack did not prove any actual VCN clock activation. When rollback tried to
+write the first generation word to 0, it immediately read back 1 and the
+SMU stopped answering. An internal generation-processing race is plausible
+but not proven. The local background watchdog had not persisted; manually
+cold-cycled isolated PDU outlet 8. New boot
+a18b3616-72bc-404f-8954-6e891592b460 passed the same read-only SMU
+preflight: original table hash, VCLK 0, governor active, DPM auto, /boot ro.
+The runner's native-clock CLI mode is disabled pending a safe rollback.
+Evidence: results/clock-walker-{preflight,noop,native,after-recovery}-20260928.jsonl;
+the source and three offline tests are in tools/vcn-psp-diagnostics/.
+No BIOS EEPROM or Pico QSPI write occurred, and no hardware frame decoded.
+
+Harvest status/control and Q3 message audit (2026-09-28 20:36)
+---------------------------------------------------------
+Reclassified CC_UVD_HARVESTING=3 as a live availability/disable indication,
+not a proven writable VCN start control or proof of a physical fuse. It was
+3 at ABL0; guarded write-zero attempts read back 3; VCN 2.0 startup does not
+read it. The missing Cyan Skillfish .dpm_set_vcn_enable callback is a direct
+software power-request gap. Offline pinned SMU SRAM table/decompile audit
+found Q3 msg 0x21 -> 0x249dc -> 0x2494c; this direct path only stores a
+message argument and a derived state value, with no domain-6 power/clock
+call. An indirect effect remains possible. AMD's public July reply says
+BC250 VCN was outside product definition, dies may differ, and PMFW/VBIOS
+support might be absent; it does not establish this die's physical condition.
+Next evidence must be a VCN reset/cache register responding to a bounded
+write/read trial, VCPU running, decode ring completion and a real decoded
+frame. The static UVD_VERSION response is insufficient. No target write was needed
+for this audit.
+
+SMU fabric-window writability trial (2026-09-28 20:17)
+----------------------------------------------------
+Read-only controls proved SMU debug-window reads and root-SMN reads agree at
+domain-6 ctrl/status, core mask and 0x50d6c. A guarded live SMU-window
+write of 0x50d6c <- 0x8f0 (baseline 0xf0) returned, but both immediate
+readbacks remained 0xf0 and VCLK remained 0 MHz. The original value was
+re-sent and verified; SMU, governor and boot stayed healthy. Raw evidence:
+results/smu-fabric-window-compare-20260928.json and
+results/smu-fabric-bit11-20260928.jsonl; scripts under
+tools/vcn-psp-diagnostics/. The first read harness deadlocked on its own
+PCI flock; it was stopped, the governor restored, and per-read locking fixed
+the probe. No target write happened in that aborted read. The trial made no
+BIOS/Pico flash write. This live bit-11 store is not a working VCN control.
+The next useful target is the unlocated VCN isolation/fabric operation.
+
+Harvest is not a proven start control (2026-09-28)
+-------------------------------------------------
+The user's status-versus-control challenge is supported by the evidence:
+VCN 2.0 startup does not read CC_UVD_HARVESTING, a guarded write of zero
+still read back 3, and the value predates Linux. The ROM discovery VCN
+record says harvest=0. Live read-only root-SMN checks on boot
+23e3fb45-1b13-4c58-be20-04c3b1bdc23a returned domain-6 control
+0x6d0f8=0x02, status 0x6d190=0x01010101, 0x50d6c=0xf0, and core mask
+0x5a870=0xff. VCLK metrics read 0 MHz. A prior volatile trial released
+the domain-6 gate, enabled its three slots, and sent power-up commands,
+yet VCN registers remained all ones. Thus domain-6 gating is real but not
+the whole startup path. We need the missing isolation/clock/fabric action,
+then a live VCPU/ring test. No target register or flash write this update.
+
+SMU feature-11 correction (2026-09-28 19:28)
+--------------------------------------------
+The pinned Cyan Skillfish SMU 11.8 PMFW header identifies feature bit 11 as
+G6_SSC, memory UCLK/UCLK_DIV spread spectrum. Van Gogh SMU 11.5 uses the same
+bit number for VCN_DPM, explaining the mistaken cross-chip mapping. Earlier log entries incorrectly
+called it a VCN power feature and slots 3/4 VCN tiles. The measured enabled
+mask, callback and state byte do not prove VCN power. The read-only
+audit_smu_feature11.py now verifies the header and reports the proper name.
+No board access or flash write. The PMFW VCN activation path remains unknown.
+
+Harvest-register interpretation and VCN power call (2026-09-28 19:20)
+------------------------------------------------------------------
+The observed CC_UVD_HARVESTING=3 is a disable/availability indication, but
+we have not shown it is writable or that forcing zero would start VCN. It
+predates Linux VCN startup; guarded writes did not change its readback.
+Earlier descriptions of it as a direct blocker were hypotheses. The running
+kernel is 7.2.5-200.fc44.x86_64, DPM level auto. Its pinned VCN 2.0 startup
+does not read the harvest register. It conditionally asks SMU to power VCN,
+then programs local gates, VCPU clock and reset, finally polling UVD_STATUS
+bit 1. Generic smu_dpm_set_vcn_enable returns success if its chip-specific
+callback is null. cyan_skillfish_ppt_funcs has no dpm_set_vcn_enable callback,
+and the SMU 11.8 message header has no PowerUpVcn command. Van Gogh does have
+a callback. The normal boot has no VCN ring because the kernel only registers
+BC250 VCN 2.0.3 under our opt-in experimental switch. Diagnostic boots with
+that switch reached VCN startup but UVD_STATUS remained 4. Registration and
+physical startup are separate steps. The missing BC250 activation path is a
+stronger lead than forcing the harvest readback, though its causal role is
+unproven. Next: identify a valid BC250 power/clock/isolation sequence, test
+it from RAM with bounded readbacks on an opt-in VCN boot, then verify an
+actual decoded frame. No hardware change or flash write in this source audit.
+
+Early fabric-bit policy trial (2026-09-28 19:10)
+---------------------------------------------
+Used a RAM-only first-read SEC_GASKET substitution to replace the original
+0x1f820 <- 0x185103 tuple at ROM 0x983068/6c with 0x50d6c <- 0x8c0.
+The second policy read and both flash chips stayed original. Two ABL0
+readback boots each verified 1398/1398 Pico substitutions over both firmware
+passes with zero fault, mismatch, late-decision and RX-stall counters.
+The fabric readback was 0xc0 on both passes, unchanged from control;
+the complementary original-target readback was 0 on both passes, proving
+the first-read substitution displaced the original 0x1f820 write. An
+offline execution of the pinned TOS/driver policy loop requests the
+retargeted SVC 0x7c write, but does not model physical acceptance. Fedora
+booted after both runs; final boot ID is
+23e3fb45-1b13-4c58-be20-04c3b1bdc23a. vainfo still fails initialization.
+Pi telemetry SHA256 pair: 832c5d330130a252ce5a148caa910b921559db816b8f540cc88ba2adfa8b7087
+and 9109b4a306fae2a2390d9e58bdef23c3ade0371523d314f68428807a358fd0d3.
+The Pico is restored to armed CS-PASS v2 in RAM; no BIOS EEPROM or Pico
+QSPI write occurred. This candidate does not enable VCN decoding.
+
+Pi 5 recovery (2026-09-28 18:47 UTC)
+----------------------------------
+At the user's request, restarted the Pi 5 over SSH. Its boot ID changed from
+72d6ec53-5bbf-4718-ad2a-76b6268934ef to
+d68f76d0-1ac3-4f59-b842-bcc1dc3ebf23. The Pico reappeared on /dev/ttyACM0.
+The staged CS-PASS v2 UF2 still hashed to
+70b5af760d37bd4a30b4c0efc35d758cbfb5c415563a63b3f093844660e3829d;
+the recovery loader loaded it into Pico RAM and armed it. Final Pico state:
+armed=1, gate=1, host_cs=1, miso=INPUT, bios_write=UNAVAILABLE. The BC250
+remained healthy on Fedora boot 433d0c0b-5d62-4915-be73-722fb2497fe9,
+with systemd running and the GPU governor active. No SPI flash was written.
+VCN decoding remains unverified.
+
+Pinned early-boot input audit (2026-09-28)
+------------------------------------------
+The new read-only tools/pico2-interposer/audit_early_boot_inputs.py verifies
+the known-working 16 MiB ROM, the measured 872744-row SPI profile and the
+parsed signed policies by SHA256. Its ignored JSON result is
+output/video-decode-20260922/psp-analysis/early-boot-input-audit-20260928.json
+(SHA256 711c2c6ebbfd72cc72e775d1831b66787ec4475e7e4a6e8e14342340397b1771).
+In the captured read order, SEC_GASKET begins at row 1648, SMU_OFFCHIP_FW
+at 7456, ABL0 at 138656, APCB at 139072, TOS_SECURITY_POLICY at 253720,
+and HARDWARE_IP_CONFIG only at 776712. Read order is not execution order.
+The two known valid directory headers at 8e0000 ($PSP) and ab0000 ($BHD)
+contain no type-0b SOFT_FUSE_CHAIN_01 entry. The 8192-byte current APCB
+validates its checksum and has PSPG/DFG/MEMG/FCHG/CBSG but no CCXG/GNBG;
+the retail P3.00 APCB independently has those same groups absent. This
+does not prove the missing groups cause VCN disable or that physical fuses
+are absent. SEC_GASKET direct writes to 1f8a4 and 1f820 match the same
+two values in Cezanne/Renoir reference policies; neither BC250 policy
+directly writes 1f81c. The signed IP-discovery harvest=0 object is read
+late and is not an independent measurement of this board's early live
+CC_UVD_HARVESTING=3. No hardware access or firmware write in this audit.
+The pinned decrypted PSP IPL's embedded 88-row SMN table has no direct
+1f81c/1f820/1f8a4/50d6c/511b4 target either.
+Retail P3.00 and the current backup have byte-identical signed
+HARDWARE_IP_CONFIG and SEC_GASKET objects; their APCB objects differ.
+
+Pi 5 restart and early policy audit (2026-09-28 18:26 UTC)
+-------------------------------------------------------
+Restarted the Pi 5 over SSH as requested. Its boot ID changed from
+07bcc707-ca2d-49f0-9a32-c1e9abe95a32 to
+72d6ec53-5bbf-4718-ad2a-76b6268934ef. Pico returned on /dev/ttyACM0.
+Verified the staged CS-PASS v2 UF2 SHA256
+70b5af760d37bd4a30b4c0efc35d758cbfb5c415563a63b3f093844660e3829d,
+loaded it into Pico RAM, and armed it. Final status: armed=1 gate=1
+host_cs=1 miso=INPUT bios_write=UNAVAILABLE. BC250 remained on Fedora boot
+433d0c0b-5d62-4915-be73-722fb2497fe9; systemd reports running and its
+GPU governor is active. Neither BIOS EEPROM nor Pico QSPI was written.
+
+Offline inspection of the hash-pinned decrypted PSP IPL and parsed signed
+BC250 policies found no direct 0x1f81c record in either SEC_GASKET or
+TOS_SECURITY_POLICY. The IPL's embedded 88-write SMN table at 0x8928 has
+no 0x1f81c, 0x1f820, 0x1f8a4, 0x50d6c, or 0x511b4 target. The SEC_GASKET
+0x201 section does write 0x1f8a4 and 0x1f820, but prior first-read policy
+substitutions proved that clearing those values, separately and together,
+left CC_UVD_HARVESTING=3 at ABL0. These absences only rule out direct writes
+in the audited tables; computed addresses, other code, and hardware latches
+remain possible. No decoded frame yet.
+
+Pi 5 restart and VCN reset-path audit (2026-09-28)
+------------------------------------------------
+Restarted Pi 5 over SSH; boot ID 6e1aa77a-fbfd-4fad-8dad-31e5f0eb88e1
+changed to daa8aff3-d9f1-425e-812f-51ed2c37d13a. Pico re-enumerated
+at /dev/ttyACM0, and RAM-only CS-PASS v2 was loaded/armed (host_cs=1,
+miso=INPUT, bios_write=UNAVAILABLE). BC250 stayed on Fedora boot
+f9a9e050-19a0-407f-989c-afa13fd33cfa and systemd reported running.
+No BIOS EEPROM or Pico QSPI payload write.
+
+The pinned original PSP driver's successful physical-function post-load
+path requests SVC7c writes 0900c004<-1 and 1f8a4<-1; the 27-case native
+status-guard trial passes. Earlier powered PSP SVC7b read 0900c004=1
+after authenticated type-13 load, whereas the host root-SMN read returned
+ffffffff. A proposed host write1 has not been tried, but the expected
+reset value is already observed through PSP, and a prior host VCN register
+read stalled the board. No host VCN access was repeated here. Harvest=3
+predates TOS and ABL0; hardware decoding still unverified.
+
+ABL3 stage boundary and reversible fabric writes (2026-09-28)
+-----------------------------------------------------------
+Signed RAM-only read hooks found 50d6c low16=c0 at ABL0, ABL1, ABL2 and
+ABL3 entry; ABL3 ARM exit read f0 after the Thumb worker. Each healthy run
+completed two Pico passes without faults or mismatches. An ABL4 entry hook
+also read f0, but that boot did not reach Fedora. Later ABL hooks use relative
+returns because their images relocate.
+
+The full-value guarded entry hook attempted 50d6c c0->8c0, immediately
+read back c0, restored c0, and emitted 03c40300 in both boot passes.
+Pico verified 41552/41552 substitutions with zero faults/mismatches;
+Fedora boot 22bd9369-773d-4cea-88a5-ce505db06086 is running, /boot ro.
+The corresponding exit hook attempted f0->8f0 and read back f0, emitting
+03c403c0 twice. Pico verified 41176/41176 substitutions, fault0/mismatch0;
+Fedora boot 26864ce5-088d-4df5-9f43-53332b08cba2 was running, /boot ro.
+Native entry/exit ARM checks passed 16 cases each and all five signed ABL
+views. Private logs: output/pico2/abl3-{entry,exit}-fabric-toggle-20260928-v1/live/.
+The direct PSP-aperture write does not stick before or after the ABL3 change.
+No causal relation to VCN is proven. VA-API still fails; harvest=3 predates
+ABL0 and remains the next source to investigate. Pi restarted once after
+serial trouble; logger now reconnects. No BIOS EEPROM or Pico QSPI write.
+
+ABL0-entry fabric gate differs from first TOS (2026-09-28)
+---------------------------------------------------------
+Read-only signed ABL0 hook sampled data-fabric word 0x50d6c low16.
+Both boot passes emitted SPI address 03c40300, hence value 00c0.
+Pico 1394/1394 verified substitutions, fault0, mismatch0, completed2.
+Fedora boot be7f8590-798f-47a1-a1df-a5912b71ab2b is running; /boot ro.
+The previously sampled first-TOS value is 00f0. Thus it changes sometime
+after ABL0 entry, but this sample cannot name the ABL stage or writer.
+Private trace: output/pico2/abl0-entry-fabric-20260928-v1/live/.
+No BIOS EEPROM or Pico QSPI payload write; no decoded frame.
+
+Guarded ABL0 VCN harvest write (2026-09-28)
+-------------------------------------------
+Signed RAM-only ABL0 hook required the full CC_UVD_HARVESTING value to equal
+3, wrote volatile zero via the PSP SMN aperture, and immediately read back.
+Both boot passes emitted SPI address 03c4000c: readback remained 3.
+Pico: 1396/1396 verified substitutions, fault0, mismatch0, completed2.
+Fedora boot 3e02c592-beaa-437d-93ef-ac8b06ee3fe4 is running; /boot is ro.
+Native ARM accepted/ignored-write and guard cases plus all five signed ABL
+views passed. Evidence is private under
+output/pico2/abl0-entry-harvest-clear-20260928-v1/live/.
+This excludes this particular ABL0 PSP-aperture write as a VCN unlock, not
+an earlier producer/lock or a physical-fuse alternative. No BIOS EEPROM or
+Pico QSPI payload write. No VCN-decoded frame.
+
+ABL0-entry VCN harvest value (2026-09-28)
+-----------------------------------------
+RAM-only SPI signing-path control replaced the usage-42 KEYDB_BL modulus
+and re-signed all five ABLs; unchanged ABL payloads reached Fedora. A signed
+ABL0 first-instruction marker then proved code execution at that boundary.
+The read-only ABL0 hook sampled CC_UVD_HARVESTING (0x1f81c) low 16 bits via
+the PSP SMN aperture. Both boot passes encoded SPI address 03c4000c, hence
+the earliest measured value is 0003, not an all-ones bus reply. Pico status:
+1394/1394 substitutions, fault0, mismatch0, completed2. Fedora boot
+11d83c4b-c21c-4372-82da-c3f3243bfe57 is running. One Pi USB failure was
+recovered by Pi restart, RAM-only Pico rearm and PDU cycle. Private evidence:
+output/pico2/abl0-entry-harvest-20260928-v2/live/.
+This places the disable value before ABL0 execution; it does not identify
+whether an earlier PSP stage or SoC latch produces it, or prove a fuse.
+BIOS EEPROM and Pico QSPI payload unchanged. No VCN-decoded frame.
+
+SMU feature-11 callback audit (2026-09-28)
+-----------------------------------------
+Current BC250 boot f1ba9964-3c6d-4e7b-bfd1-110633c2f5e2: live Q0 enabled
+mask and live SRAM desired/enabled masks are all dd602c7d. Feature bit 11
+is enabled; the SMU 11.8 header calls it G6_SSC, not VCN power. Both its live
+on/off callbacks point to 1d938. The callback's
+live bytes match the pinned SRAM and its only effect is to return 1.
+The clock-slot state byte remains 1, and the live down/up code bytes match the
+pin. Offline audit: tools/vcn-psp-diagnostics/audit_smu_feature11.py.
+Q2 bit-11 off/on alone does not directly invoke tile down/up, so it was not
+run. No Pi/BC restart or flash write in this audit. Pre-TOS harvest=3 is still
+the discriminating problem; no hardware-decoded frame.
+
+Pi restart and ABL provenance audit (2026-09-28)
+-----------------------------------------------
+Restarted Pi 5 over SSH. New Pi boot ID b5f196fd-46bd-4dff-baa7-5a476e957a4f;
+Pico reappeared on /dev/ttyACM0 in PASSIVE v1 and was reloaded/armed with
+the known RAM-only CS-PASS v2 image. BC250 remained on Fedora boot
+f1ba9964-3c6d-4e7b-bfd1-110633c2f5e2, with no board/Pico flash write.
+
+The pinned audit_pre_tos_abl.py verified all five vendor-signed ABL images
+and their decompressed digests against the working ROM. The measured SPI
+read profile loads ABL0..4 before TOS. That is read order, not direct proof
+of execution order: first-TOS fabric=f0 and harvest=3 can still be set by
+an ABL stage, PSP bootloader, or SoC latch. The decrypted IPL and all five
+decompressed ABL bodies contain no direct little-endian 32-bit literals for
+50d6c, 511b4, or 1f81c; the IPL does contain the known 5a870 control and
+0322003c selector. Computed or hardware-derived addresses remain possible.
+Next useful test is a read-only stage-boundary measurement. No decoded frame.
+
+Pre-TOS fabric value and reversible bit-11 test (2026-09-28)
+----------------------------------------------------------
+Signed RAM-only first-TOS read measured PSP-aperture 50d6c=f0, 5a870=77,
+VCN harvest 1f81c=3. On the same healthy Fedora boot
+6fbc2b1d-5c27-4901-8055-ddbfb2d9af3a, root-SMN read-only controls
+found 50d6c=f0, 511b4=ffffffff, 5a870=ff. The fabric word was already
+at its late value before TOS, while the core-mask control changed.
+
+A second hook guarded that exact early triple, wrote volatile 50d6c<-8f0,
+read fabric and harvest, restored f0 and read both again. Native accepted,
+ignored, guard-failed and restore-failed ARM cases passed before live use.
+Live encoded values were f0,3,f0,3 with safe-end marker: bit11 did not
+stick even briefly via the privileged direct aperture. Pico fault0 and
+788/788 verified substitutions; Fedora boot
+f1ba9964-3c6d-4e7b-bfd1-110633c2f5e2 is running. Traces and never-flash
+profiles are under output/pico2/tos-entry-fabric-{timing,bit-toggle}-20260928/.
+This rejects one early direct bit-11 write but does not prove a fuse or
+identify the producer/lock. Pico returned to armed RAM-only CS-PASS v2,
+MISO input-only. No BIOS EEPROM/Pico QSPI write; no decoded frame.
+
+Pi restart, early VCN policy pair, bounded ABL capture (2026-09-28)
+------------------------------------------------------------------
+Restarted Pi 5 while BC250 was running; Pico reverted to passive QSPI and
+was rearmed with RAM-only interposer before any cold boot. Signed first-TOS
+hook read 1f820=00185103, 1f8a4=0000000b and 1f81c=3. Guarded volatile
+pair-clear read back both policy words as zero but 1f81c remained 3 after
+a zero write. Original policy values were restored and verified; Fedora
+booted, Pico fault0 and 908/908 substitutions verified. These two early
+policy words alone do not explain the harvest latch; fuse provenance is
+still unproven.
+
+A 64 KiB 54000..63fff read exceeded the safe boot window and produced an
+incomplete mixed trace; no Fedora boot. Pico CS-PASS v2 RAM image plus PDU
+cold cycle recovered the BC250. The first 4 KiB matched the prior dump.
+Added start/end markers and a strict decoder for short captures; native ARM,
+signed-view and decoder checks passed. Two subsequent 8 KiB reads at
+55000..56fff and 57000..58fff reached Fedora and yielded private SHA256
+45c6a7f5799ad7a37744c5f3ce2b4926dd607b47d5809f357a8e4473d03d8c84
+and 19fdfedbecec483358d8eeef28bf67b2bcffa273355fd216a8e3c9cb0ecc8a43.
+The 54000 $PS1 header and the new slices contain AGESA ABL memory-init
+code/log strings, not the PSP bootloader. No direct 1f81c/1f820/1f8a4
+literal appears in the new slices. Current BC250 boot
+6dfb1084-0547-487a-868c-02dbc26a0fea is healthy; Pico armed in CS-PASS
+v2 RAM-only mode, MISO input-only. No BIOS EEPROM or Pico QSPI payload
+write, no decoded frame. The next target is a pre-TOS ABL, PSP bootloader,
+or SoC latch boundary rather than more adjacent ABL text.
+
+Pi 5 reboot and TOS policy-memory control (2026-09-28)
+------------------------------------------------------
+Rebooted Pi 5 to recover Pico USB; Fedora remained up. The Pico reverted
+to its QSPI PASSIVE v1 image, so loaded and armed the RAM-only CS-PASS v2
+relay before any BC250 cold boot. A signed, read-only TOS-entry capture of
+0x54000..0x54fff showed PSP code, not the register table. A second capture
+of the IPL's 0x0779e000 policy pointer produced a $PS1 object matching all
+4 sections and 144 records of the clean-ROM BC250 TOS_SECURITY_POLICY at
+0x9ca400. That policy has zero direct 0x0900cxxx VCN register records and
+does not explain the early CC_UVD_HARVESTING=3. Native ARM checks passed;
+both Pico boots had fault0 and all substitutions verified. Fedora boot IDs
+490bfa30-71f7-4bf7-bb27-a9cf66219bc3 and
+c44a3872-e568-42b1-bf22-2a71192aa600; the latter is running. Private
+captures and validator are recorded in docs/video-decode-next-step.md.
+Pico restored to armed CS-PASS v2 with MISO input-only. No BIOS EEPROM or
+Pico QSPI payload write, and no decoded frame.
+
+VCN harvest=3 before TOS, early direct write ignored (2026-09-28)
+-----------------------------------------------------------------
+Reused the decrypted PSP IPL's direct SMN aperture sequence in a signed,
+RAM-only TOS first-instruction hook. Core-mask control 0x5a870 read 0x77
+early, while the same successful Fedora boot later read root-SMN 0xff.
+The first control attempt lost Pi USB; Pi restart recovered it, then CS-pass
+RAM relay plus PDU returned original-BIOS Fedora. A logged control retry
+captured fixed start/end markers, 0x77, zero Pico faults and 564/564
+verified substitutions, then Fedora booted. This validates the early read
+as a changing hardware value. On the same path, 0x1f81c returned 0x3
+before TOS ran. Its marker sequence was 03c3fffc 03c4000c 03c80000
+03cffffc, Pico fault0 and 564/564 verified; Fedora boot ID
+d54b0f6f-0f6f-4f53-9bff-18d888c01fb8.
+
+A separate guarded early hook required 0x1f81c=3, wrote zero once through
+the IPL aperture, and read back 3 immediately. The six captured addresses
+encode before=3 and after=3: 03c3fffc 03c4000c 03c80000 03c4000c
+03c80000 03cffffc. Pico fault0, 620/620 verified substitutions; Fedora
+boot ID 4ef706ed-c32d-417b-82d9-68cd55626a1f, systemctl running.
+Native ARM tests passed five cases for each hook, including accepted and
+ignored writes, guard failure, signed views and stock continuation. The
+disable bits predate TOS/UEFI/Linux and resist the tested early and late
+volatile writes; this does not prove a physical fuse. BIOS EEPROM and Pico
+QSPI payload unchanged; no decoded frame. Next: trace the earlier PSP IPL
+or hardware latch that supplies the bits. BC250 healthy on boot
+4ef706ed-c32d-417b-82d9-68cd55626a1f. Pico returned to armed CS-PASS v2
+RAM image with MISO input-only; no extra BC power cycle needed.
+
+DF-lock omission did not unlock root-SMN 0x50d6c (2026-09-28)
+------------------------------------------------------------
+A second equal-length DF-lock overlay boot completed both 20,727-read UEFI
+passes, Pico fault0, max rearm 166 cycles, and its second-pass wire sample
+matched all 32 words. Fedora booted as
+3489ac2a-0b0d-4caa-a726-a4eb27071404. A pinned, boot-ID and PCI-ID
+guarded probe required root-SMN 50d6c=f0 and 5a870=ff, attempted only
+volatile 50d6c<-8f0, read back f0, restored f0, and verified final f0.
+The UEFI LockDFReg omission therefore does not make that word writable
+through root PCI SMN after boot. Callback execution, bit-11 meaning and
+VCN fuse provenance remain unproven. BIOS EEPROM unchanged, no decoded
+frame. Pico remains on the completed two-pass image with MISO input-only;
+the BC250 is healthy on the overlay boot. See
+tools/vcn-psp-diagnostics/probe_df_gate_after_lock_omission.py.
+
+SMU Q3 handler attribution corrected offline (2026-09-28)
+---------------------------------------------------------
+Ghidra xrefs on the pinned 88.6.0 SMU SRAM image show 0x24764 is domain-6
+DOWN with zero references; the direct 0x23b14 domain-power callers also
+include generic slot clock, domain-7 up/down and domain-5 down, but no new
+sendable domain-6 up message. Q3 0x5c/0x5d call generic clock programming
+for non-VCN slots. A public scanner's coarse 0x24600..0x24800 range had
+misattributed nearby callers to Q3 0x1a/0x42/0x60/0x9a; those messages were
+not sent. See tools/vcn-psp-diagnostics/Bc250SmuPowerXrefs.java and
+output/video-decode-20260922/FIRMWARE_ANALYSIS.md.
+
+DF-lock omission boots but leaves VCN disabled (2026-09-28)
+----------------------------------------------------------
+The early-CS-release Pico selector fixed the late-selector full-stream boot
+failure. Its exact-original QSPI control completed both 20,727-read UEFI
+passes (41,454 total), fault=0, and booted Fedora. The same selector then
+served the 1,327,104-byte equal-length DF-lock omission candidate from the
+reserved Pico QSPI area. Independent readback verified payload SHA256
+94693ac43e90236b77e6fc2be64c4ab8e48e18fd88b0ec6c3b95ae9af1e53ef9.
+The final candidate trial completed both passes, fault=0, maximum rearm 162
+Pico cycles, and a second-pass 64-byte input-only MISO sample matched every
+expected word. Fedora boot ID d8bd138b-2c0b-4228-b756-bcdb8e74cd27.
+The kernel detected only GPU IP blocks 0..7, with no VCN; vainfo failed
+initialization. Safe root-PCI-index SMN reads on that boot remained
+50d6c=f0, 511b4=ffffffff, 5a870=ff. The omission is not a hardware-decode
+fix and must not be flashed to the BIOS EEPROM. A previous direct GPU BAR5
+MMIO mmap read hung the board and was recovered; do not repeat it.
+
+While restoring passive mode, Pico USB disappeared on a RAM-image load.
+Restarting the Pi 5 brought Pico USB back. The known CS-PASS v2 RAM image
+was then armed with MISO input-only, followed by a PDU cold cycle. Original
+BIOS Fedora is healthy, boot ID f695bd15-ce10-4b19-98b8-4fd3b37ca543,
+systemctl running. BC250 BIOS EEPROM was never written; the candidate Pico
+QSPI payload remains dormant under the passive RAM image. No decoded frame.
+
+Earlier late-selector full-stream failure (2026-09-28)
+-------------------------------------------------------
+Pi 5 restart recovered Pico USB after the earlier RAM-image failure; no
+physical BOOTSEL action was needed. The original BC250 firmware remains on
+its BIOS EEPROM throughout this work. A 1,327,104-byte equal-length DF-lock
+candidate payload was written once to reserved Pico QSPI, independently read
+back and SHA256-verified. The RAM selector's candidate trial delivered all
+20,727 64-byte replies in the first UEFI pass, fault=0, maximum rearm 153
+Pico cycles, but Fedora did not boot and the second pass never started.
+
+To separate firmware behavior from the interposer, the reserved Pico QSPI
+range was then written once with the exact original ROM bytes, independently
+read back and SHA256-verified (payload SHA256
+a920ee83a043ae2f916846b32fd680d90612ac8e9060afe5fe5fd411046cc092).
+The same two-pass selector, rebuilt with original first words and payload
+hash, again completed exactly one 20,727-read pass with fault=0 and maximum
+rearm 152 Pico cycles; Fedora did not boot. This control means the candidate
+failure cannot yet be attributed to DF-lock omission or LZMA padding. Both
+failures recovered by loading the known CS# pass-through RAM image and PDU
+cold-cycling the BC250. Final boot ID
+b128ae2b-836b-40eb-9ad4-675d5515462b, systemctl running, Pico MISO
+input-only and relay armed. No BIOS EEPROM write, no decoded frame.
+
+The earlier 34/42.5 MHz single-burst and 1,024-burst benches were invalid:
+RAM images had not initialized Pico QMI/XIP, so they compared zeros with
+zeros. Corrected RAM images call flash_start_xip and use a fast 0x0B QSPI
+read mode. An independent nonzero 64-byte oracle passed 1,000/1,000 at
+34 MHz; 42.5 MHz failed. A SHA256-pinned actual-candidate 64 KiB oracle
+then passed 1,024 64-byte reads at 34 MHz and ~1,064 ns CS# gaps with no
+fault, maximum rearm 52 cycles. These local digital passes do not prove
+on-wire BC250 response integrity. Next: input-only MISO capture during an
+exact-original full-stream trial and compare captured bytes with pinned ROM.
+
+Sixteen exact-original consecutive board handoffs (2026-09-28)
+---------------------------------------------------------------
+The Pico-only 34 MHz PIO-host bench served 1024 increasing-address 64-byte
+reads from sequential uncached onboard flash through 1023 rearm operations.
+All 16384 captured words matched; steady CS# high gaps were independently
+measured at 1070 ns and maximum rearm was 52 Pico cycles (~153 ns). A second
+1024-read run at 605 ns steady gap also passed. The final local bench was
+RAM-only and left BC250 original-flash relay running.
+
+The pinned working-ROM generator produced a private ignored 16x64-byte
+unchanged response header, SHA256
+3d392ae405af0dd028bdefc0bb5d5b0cc03e36fefdf2051f56e967b7fd6f2949.
+RAM-only board-control UF2 SHA256
+62e304ffa9c84107cef8c9322930b88838c6013e88ebda3e5f9bc8d7d9d56c26.
+Two separately armed active PDU boots each completed 16/16 exact-original
+replies with fault0 and DMA0/FIFO0; maximum rearm was 133 and 137 Pico cycles
+(~391 and 403 ns). Fedora returned after both. An intervening boot tested the
+one-shot control's pass-through fallback and also reached Fedora. No BIOS
+EEPROM or Pico flash write, no decoded frame.
+
+The untested DF-lock candidate also changes 3 four-byte words read in an
+earlier address scan at ae0088, ae008c and ae0090; early 64-byte-read order
+varies between complete captures. A full mixed-length overlay and staging of
+the 1.38 MiB changed region remain, alongside the unproven DF-lock/VCN
+causal link. Do not flash the candidate ROM to BIOS EEPROM.
+
+Pico XIP source and complete UEFI gap measurement (2026-09-28)
+-------------------------------------------------------------
+RAM-only on-chip SPI1/PIO1/PIO2 self-test used otherwise-unwired GP8..GP12
+while PIO0 maintained the original-flash GP7 relay. At actual 34 MHz and
+42.5 MHz, 1000/1000 64-byte replies at each rate were read by DMA from the
+Pico's uncached onboard QSPI flash and captured byte-for-byte correctly.
+XIP bench UF2 SHA256 2e4dd02d07c19b7c49c94b5e9ed9bf3fa29d3c06b6460fe1609ea6dd5bf5ce3b.
+The SDK initially left clk_peri at 48 MHz, capping SPI1 at 24 MHz; explicitly
+sourcing clk_peri from 340 MHz clk_sys fixed this and the reported baudrate
+was verified. BC250 remained up throughout.
+
+A passive RAM-only PIO CS# high-gap counter observed a full first long UEFI
+64-byte read pass after a PDU boot: 21610 internal gaps, min 1071 ns,
+median 1076 ns, max 1106 ns, ~6 ns resolution. Buffer region end 21689 was
+below capacity 22000; watcher saw 1836879 commands with zero RX stall.
+Fedora returned. The roughly 1 us gap is the deadline for a per-burst
+rearm design. No BIOS EEPROM or Pico flash write; still no decoded frame.
+Details: docs/df-lock-control-20260928.md.
+
+Exact-original 64-byte SPI handoff (2026-09-28)
+-----------------------------------------------
+A fresh read-only RLE boot capture recorded 1,836,880 commands with zero
+loss/stall and proved that the 0xae00c0 read between trigger 0xae0100 and
+target 0xae0140 is optional. A fixed-skip Pico burst selector therefore
+failed closed on one trial; USB/PDU recovery returned Fedora. A replacement
+31-bit address-matching selector holds the original flash selected through
+the command prefix, then releases it before the final target address bit.
+Offline replay covered both read orders, the physical 33 MHz waveform, and
+bounded eight-word FIFO DMA. Passive MISO-disabled and active exact-original
+64-byte trials both booted Fedora. The active Pico completion IRQ reported
+verified=1, fault=0, DMA remaining=0, FIFO=0; its first-target snapshot
+recorded relay OE=0 and MISO OE=1. UF2 SHA256:
+ad2c0e92d7292b339fa91debac0464c4ea814d874bc1830b58cebb615cf8cd62.
+No BIOS EEPROM or Pico flash write and no decoded frame. The DF-lock ROM is
+still UNTESTED and MUST NOT BE FLASHED: fresh read coverage requires 1,386,944
+bytes of changed 64-byte replies, beyond Pico SRAM. Next: validate an XIP/DMA
+source and a multi-burst profile, or find a narrower early producer of the
+fabric/harvest state. Details: docs/df-lock-control-20260928.md.
+
+Offline BC250 UEFI DF-lock control (2026-09-28 03:20 UTC)
+---------------------------------------------------------
+The working control ROM contains the exact extracted AmdPspDxeV2 PE. Its
+PCI-enumeration callback calls PSP mailbox 0x1b (LockDFReg) at PE 0x229f.
+Unicorn confirms a five-byte call omission preserves the local success path.
+A full-ROM LZMA/FFS rebuild passed round-trip and uefi_firmware 1.16
+re-extraction; the decompressed nested FV changes only those five bytes.
+Candidate SHA256 f3bf69891739c5143748bc975dc7030e1144fdfebf27c325dccad5d748aa7c64
+is ignored under output/video-decode-20260922/df-lock-control-20260928/ and
+MUST NOT BE FLASHED: an EPYC paper reports reboot-before-GRUB when 0x1b
+alone is omitted, BC250 semantics of 0x50d6c are unknown, and Pico needs
+new 64-byte burst streaming for this dense 1.38MiB compressed region.
+Details: docs/df-lock-control-20260928.md. No live write in that phase.
+Later the same turn, a RAM-only GP7 CS# pass-through Pico capture measured
+READ03 0xae0180 as 32 command plus 512 data clocks, approximately 33.34MHz.
+All 64 original-flash reply bytes matched the pinned working ROM; the command
+watcher saw 1,836,737 commands without RX stall. Fedora returned from the
+authorized PDU cold cycle. The Pico was then in input-only burst-capture/pass
+mode; neither BIOS EEPROM nor Pico flash was written.
+The BC250's ExitBootServices mailbox call (0x06) was separately pinned at PE
+0x8c1. An additional offline control omits both 0x1b and 0x06, preserving
+their local success paths. Native x86 execution and independent UEFI
+re-extraction passed; the combined ROM SHA256 a586109cd0375fa9c4b30fb1c5e079201ed7f0e2d0e2d8c75ef77e9ebeaf5795
+is UNTESTED and MUST NOT BE FLASHED. No evidence yet links the lock to
+BC250 0x50d6c or a working VCN.
+
+PSP/host SMN alias control (2026-09-28)
+---------------------------------------
+The known root-SMN core-mask control 0x5a870 read ff, distinct from fabric
+0x50d6c=f0. A pinned RAM-only first-VCN PSP read of argument 0x5a870 returned
+diagnostic 700000ff on boot 7ec81d27-a824-42fd-b121-f6e0655eeed9. The
+Trusted OS instruction model maps it to aperture 0x0105a870. Pico verified
+770/770 substitutions across two passes, fault0/mismatches0. Same-boot host
+read stayed ff, fabric stayed f0. This second matching value strengthens the
+PSP-to-host SMN alias interpretation; it does not identify fuse provenance
+or prove a decoded frame. The diagnostic runner intentionally rejected the
+nonzero status, then restored clocks. GPU bound, /boot RO, no pending GRUB
+entry. No BIOS EEPROM or Pico flash write. Details and hashes at the top of
+docs/video-decode-next-step.md. Next: isolate the pre-Linux producer of the
+fabric/harvest value rather than repeat late writes that read back unchanged.
+
+First-VCN PSP fabric read and guarded write (2026-09-28)
+--------------------------------------------------------
+The signed-driver first-VCN diagnostic read requested PSP service argument
+0x50d6c, mapped by actual Trusted OS instructions to aperture 0x01050d6c.
+It returned value f0 as diagnostic status 700000f0 before host VCN setup,
+matching the root-SMN 0x00050d6c reading on this board. This corroborates
+an alias but not physical fuse provenance. Pico verified 770/770 changed
+replies over two passes with fault0/mismatches0. Next, a guarded RAM-only
+trial read initial f0, requested volatile bit11 set (8f0), read back f0,
+wrote original f0, and verified final f0. PSP services reported zero errors;
+Pico verified 834/834 changed replies, fault0/mismatches0. The value did not
+change, so this late PSP write is insufficient. No BIOS EEPROM/Pico flash
+writes, no decoded frame. Diagnostic boot
+a8084cf3-e941-4f5d-b30b-f9d50e4c07cd was reachable, GPU bound, /boot RO,
+GRUB recovery entry absent. Exact experiments and hashes are at the top of
+docs/video-decode-next-step.md. Next identify the boot-stage producer or
+another authorized hardware route before further writes.
+
+Combined native/policy 0x1f820 omission and SMU correction (2026-09-28)
+---------------------------------------------------------------------
+RAM-only Pico profile vcn-skip-both-1f820 omitted the original native type-13
+SVC and guarded the earlier signed SEC_GASKET 0x201 loop against only
+(0x1f820,0x185103), without changing the policy object. Actual-instruction
+offline loop test: original 1230 SVC calls, guarded 1229, exactly the target
+removed; three predicate controls pass. The policy loop was not directly
+marked live. Pico verified 1458/1458 substitutions over two boot passes,
+fault=0, mismatches=0, no late decisions or RX stalls. Powered host VCN
+MMIO still showed power=800, pgfsm=0, harvest=3. PSP VCN load ret=0/status=0;
+UVD_STATUS remained the driver's BUSY value 4, decode ring -110, GPU unbound.
+Current diagnostic boot 5eeba018-0e66-43c9-81a9-dbcdd927b49d is reachable,
+/boot read-only, unused one-time recovery removed. No decoded frame and no
+BIOS EEPROM or Pico flash writes. Ignored evidence:
+output/pico2/driver-video-skip-both-control-20260928/ and
+output/video-decode-20260922/results/late-vcn-skip-both-control-v01-20260928.*.
+Tracked implementation: tools/pico2-interposer/prepare_policy_control_trial.py,
+test_policy_control_trial.py and driver-policy-skip-control.{S,ld}.
+
+The pinned SMU SRAM snapshot has G6_SSC feature bit 11 set at word 0xCCA0
+(0xdd602c7d). Byte 0xCEE1=1 is written by the firmware after its tile-up
+calls and cleared after tile-down, so calling it a permanently closed gate
+was wrong. These are clock slots 3/4, not established VCN tiles. This does
+not prove the physical slot-up effect or resolve the
+live harvest=3. See docs/video-decode-next-step.md for hashes and instruction
+addresses. Do not patch that byte from the old interpretation. A guarded
+same-boot root-SMN read after failed VCN probe measured 0x50d6c=f0 and
+0x511b4=ffffffff, with target writes disabled. Script:
+tools/vcn-psp-diagnostics/read_fabric_gate.py. These values identify a
+fabric/routing question, not the physical source of the bits or their boot
+timing.
+
+Latest powered VCN free-counter result (2026-09-28)
+---------------------------------------------------
+A guarded module sampled UVD_FREE_COUNTER_REG with the VCPU CLK_EN bit set,
+then after clearing and restoring that bit. Four reads separated by 100 us
+were all zero, while VCPU_CNTL readback followed the requested 0ff20200 ->
+0ff20000 -> 0ff20200 transition. PSP firmware load again succeeded, but
+harvest stayed 3, UVD_STATUS stayed at the driver's own BUSY value 4, and
+the GPU did not bind. The register definition does not document what enables
+this counter, so zero is not by itself proof that the physical VCPU clock is
+stopped. Pico verified 8412/8412 substitutions over twelve passes, fault=0,
+routing mismatches=0, no late decisions or RX stalls. Current diagnostic boot
+is aebc9067-eec3-4503-8bb2-c0a8cdaa9f73, GPU unbound, /boot read-only,
+recovery staged. No BIOS EEPROM/Pico flash write and no decoded frame.
+Evidence: output/video-decode-20260922/results/
+late-vcn-free-counter-v01-20260928.{jsonl,dmesg}.
+
+Latest VCPU clock-control readback (2026-09-28)
+------------------------------------------------
+A guarded module briefly cleared only UVD_VCPU_CNTL.CLK_EN before Linux's
+VCPU reset-release step and restored its exact prior word. Powered host-MMIO readback tracked
+0ff20200 -> 0ff20000 -> 0ff20200. Thus at least this powered VCN control
+bit accepts host writes. PSP postpower firmware load returned ret=0,status=0,
+but CC_UVD_HARVESTING stayed 3, reset/cache registers still read ffffffff,
+UVD_STATUS stayed at the driver's own BUSY value 4 through ten waits, and
+the GPU did not bind. The VCPU clock's physical oscillation is unmeasured;
+this result does not clear the harvest gate. Pico verified 7010/7010
+substitutions in ten passes with fault=0, routing mismatches=0, no late
+decisions or RX stalls. Current diagnostic boot is
+dcd5b84c-c9b2-4cf6-8829-14a0551275b1; GPU unbound, /boot read-only,
+recovery staged. Neither BIOS EEPROM nor Pico flash was written, and no
+frame was decoded. Evidence: output/video-decode-20260922/results/
+late-vcn-vcpu-clock-readback-v01-20260928.{jsonl,dmesg}.
+
+Offline mailbox audit: the public SetSoftMaxVcn 0x4c / SetSoftMinVcn 0x4d
+hint lacks a queue and PMFW-version pin. This BC250's Q3 0x4c means GFX
+droop calibration and Q3 0x4d means CPU VID offset; its SMU 11.8 Q0 message
+table has no VCN clock commands. Do not issue those numbers until their
+actual dispatch table, queue and arguments are identified.
+
+Latest powered direct-buffer VCN trial (2026-09-28)
+----------------------------------------------------
+A one-shot module selected the ordinary direct firmware BO path for the pinned
+navi10_vcn image instead of the PSP TMR VCN mapping. Unlike the earlier direct
+trial, UVD_VERSION had become 0002001b and PGFSM_STATUS was zero before VCPU
+release; guarded direct VCPU/LMI reset writes were also used. The VCN buffer
+was f41fc00000, firmware file size 405952 bytes. Harvest remained 3, status
+remained 4 through ten waits, and the GPU did not bind. This excludes the
+protected TMR mapping alone as a sufficient explanation for the failed VCPU
+startup. Status 4 is the driver's own UVD_BUSY write; the VCPU never supplied
+the IDLE bit 1 that Linux waits for. Pico verified 5608/5608 substitutions
+in eight passes, zero fault,
+mismatches, late decisions and RX stalls. Current BC250 diagnostic boot is
+03c443f2-4ea5-4d25-8f13-24fb1a9b87fc, GPU unbound, /boot read-only and
+recovery staged. No BIOS EEPROM or Pico flash write and no decoded frame.
+Evidence: output/video-decode-20260922/results/
+late-vcn-direct-bo-powered-v01-20260928.{jsonl,dmesg}.
+
+Latest VCN version and direct-reset trials (2026-09-28)
+-------------------------------------------------------
+On a diagnostic BC250 boot with a fault-free Pico RAM interposer, a read-only
+module measured UVD_VERSION=deadbeef before the host power sequence
+(POWER_STATUS=801, PGFSM_STATUS=00200000). With POWER_STATUS=800 and
+PGFSM_STATUS=0, it read 0002001b before and after VCPU reset release.
+CC_UVD_HARVESTING stayed 3; the postpower PSP VCN firmware load returned
+ret=0, status=0; UVD_STATUS remained 4 and the GPU did not bind. Thus at least
+the VCN version register becomes accessible, even though VCPU execution has
+not been demonstrated. Journal and dmesg:
+output/video-decode-20260922/results/late-vcn-version-probe-v01-20260928.*
+
+Since UVD_SOFT_RESET reads ffffffff, a second pinned module replaced the
+stock read-modify-write release with explicit VCPU reset assert/zero writes
+after successful PSP load, and used direct zero for LMI reset release and
+retries. Reset readback still showed ffffffff, status stayed 4, and the GPU
+did not bind. Readback may be write-only or ignored; the decode outcome did
+not improve. Journal and dmesg:
+output/video-decode-20260922/results/late-vcn-direct-reset-after-psp-v01-20260928.*
+Pico verified 4206/4206 substitutions across six boot passes with fault=0,
+mismatches=0, and no late decisions. Current BC250 boot
+e6b63b22-cde6-4aef-b913-1a58215ea19b is diagnostic, GPU unbound, /boot
+read-only and one-time recovery staged. No BIOS EEPROM or Pico flash write,
+no decoded frame. Next: trace the origin/lock of live harvest=3 before the
+first VCN firmware request; a visible version register does not prove VCPU
+or decoder readiness.
+
 Latest post-power firmware retry (2026-09-27)
 ---------------------------------------------
 A pinned diagnostic amdgpu module turned on the UVDW tile (PGFSM_STATUS=0),
@@ -7013,3 +8542,679 @@ is physically fused off. Pico verified 3342/3342 changed replies across six
 boot passes, mismatch0/fault0. No BIOS EEPROM or Pico flash writes. Board left
 on diagnostic boot 043bb68e-2186-4744-aac7-cc969e9bdabb, GPU unbound, with
 bc250_vcn_once=1 recovery staged; /boot read-only. Desktop not restored.
+
+2026-09-27 18:02 UTC: powered VCN cache-register PSP read/write boundary
+-----------------------------------------------------------------------
+Three additional RAM-only Pico trials separated the first signed-driver VCN
+load from a second load by PSP-side UVD_POWER_STATUS (0x801 -> 0x800).
+After PGFSM status reached zero, PSP SVC7b read full-address reset word
+0x0900c004 as 1 (diagnostic PSP status 70000001). It read VCN firmware-cache
+BAR low 0x2107c as 0 both before and after host vcn_v2_0_mc_resume wrote the
+cache registers (diagnostic status 70000000). Host cache BAR, size, offset,
+stack BAR and soft reset still read ffffffff. A third profile issued PSP
+SVC7c write of the known firmware address low word 1fa00000 to 0x2107c
+immediately after host programming, then PSP SVC7b read back 1fa00000
+(diagnostic status 7fa00000). This establishes PSP-side access to that
+powered register and a missing expected value after host programming. It
+does not prove the other cache registers or VCPU startup are fixed. All
+profiles passed native instruction tests (13, 13 and 14 cases), Pico SRAM
+interposition had fault0/mismatches0, and no BIOS EEPROM or Pico flash
+was written. Live journals are in output/pico2/driver-video-gasket-postpower-*
+20260927/live and output/video-decode-20260922/kernel-build/vcn-postcache-
+reload-20260927/live. BC250 left on diagnostic boot
+55b9f6ec-2d67-43bd-83a8-3c8ab2352610, GPU unbound, recovery armed,
+/boot read-only. No frame yet. Next: PSP-side programming of the remaining
+VCN memory-controller windows using live kernel allocation values, then
+release VCPU and test a decoded frame.
+
+2026-09-27 18:36 UTC: guarded PSP-side VCN map trial and narrowed timeout
+-----------------------------------------------------------------------
+A host PCI SMN read of VCN 0x1f810 stalled after two expected domain-6
+control reads; the BC250 stopped answering SSH. Outlet-8 PDU recovery
+returned diagnostic boot 1e110c30-a177-4251-ae4c-742fb1685777. Avoid
+host PCI SMN reads of VCN register addresses.
+
+A pinned diagnostic module logged VCN BO 0xf41fd00000, shared memory
+0xf41fda0000, TMR firmware 0xf41fa00000, firmware bytes 405952 and cache0
+size 0x64000. A new kernel guard checks those values plus gfx config before
+submitting a post-cache PSP request. Full 17-entry PSP-side register map and
+a one-entry table prefix both passed native-instruction tests and loaded
+through fault-free Pico SRAM interposition, but their live second PSP request
+timed out after about 2 seconds (ret -22, response status 0), before a VCPU
+startup. The pinned allocation guard matched both times. The known inline
+single-register PSP write had previously returned promptly, so the table
+fetch or new runtime hook is the next distinction.
+
+An inline one-entry control and RX-resident table alternatives were built,
+passed 9/25 native-instruction cases respectively, and their UF2 files were
+staged on the Pi. The inline control's Pico RAM load did not re-enumerate USB
+serial, leaving it unarmed. The Pi user has SSH key access but does not have
+the previously claimed pi/pi sudo password; port reset and Pi reboot require
+interactive authentication. The user was asked to reconnect only the Pico
+USB cable. BC250 is powered OFF pending a verified Pico arm. No flash writes
+and no decoded frame.
+
+2026-09-27: powered PSP VCN cache-map writes and readbacks
+----------------------------------------------------------
+The Pico re-enumerated after the user reconnected its USB cable. Its Pi 5
+SSH/sudo credentials are in a Git-ignored, mode-0600 local note under
+output/pi5-recovery-20260924/. Inline and RX-table one-word controls each
+returned diagnostic status 0x6d000001 after writing and reading back VCN
+cache BAR low 0x1fa00000. Thus the earlier two-second timeouts were specific
+to the original writable-data table path, not the powered PSP register write.
+
+The RX code-region table's full 17-entry write sequence returned PSP status
+zero. VCPU still waited ten times at UVD_STATUS=0x4; the GPU did not bind.
+A 17-register readback loop first found a mismatch at GFX10_ADDR_CONFIG.
+Repeating the trial with the first 16 cache-window registers read back in
+reverse order found every value correct; VCPU startup was still unchanged.
+A separate PSP readback showed GFX10_ADDR_CONFIG=0x00100004 after writing
+0x00100044. The VCN 2.0 register mask excludes bit 0x40, explaining that
+readback difference. The host still reads cache and soft-reset registers as
+0xffffffff. New signed-driver profiles passed 57, 55 and 26 native
+instruction cases respectively, plus six scoped startup executions each.
+Pico had no routing fault or mismatch on the live boots. No BIOS EEPROM or
+Pico flash write; all substitutions were in SRAM. Full live journals are in
+output/video-decode-20260922/results/late-vcn-map-*.jsonl. No decoded frame.
+
+2026-09-27: VCPU trace and postrelease PSP map/reset retry
+-----------------------------------------------------------
+The reset-release Pico profile wrote zero to UVD_SOFT_RESET via PSP SVC 0x7c
+and confirmed the 0x200d reset bits clear via SVC 0x7b. VCPU nevertheless
+stayed at status 0x4. A new pinned diagnostic module combined the allocation
+guard and PSP cache map with VCPU PC/PF/latency samples at release and wait0.
+Both samples were PC=0, PF=0, latency=0x0000ff00; status stayed 0x4, GPU
+unbound. Earlier trace-enable failed to latch, so PC=0 is not definitive.
+Another module retried the signed PSP map/reset path after the host's
+reset-release RMW sequence. The third PSP request returned ret=0/status=0,
+but VCPU status and PC/PF/latency stayed unchanged through ten waits. Pico
+fault=0, mismatches=0; all trials were RAM-only, no EEPROM or Pico flash
+write. Journals archived under output/video-decode-20260922/results/.
+BC250 is on diagnostic boot eecd48b5-dec9-4ea1-a73e-56f006d691ba, GPU
+unbound, recovery entry armed, /boot read-only. Next distinguish the actual
+PSP-visible soft-reset value after host RMW, before another PSP reset write.
+
+2026-09-27: corrected VCN reset address and PSP clock readback
+-------------------------------------------------------------
+The earlier PSP address 0x1f8a4 was incorrectly identified as Linux's
+UVD_SOFT_RESET. The real VCN 2.0 segment-1 UVD_SOFT_RESET byte address is
+0x20180. An early PSP read after the Linux host reset-release sequence found
+0x00080008, so the VCPU reset and its clock-reset status remained asserted.
+A guarded PSP-side write of zero to 0x20180 returned success and a full
+readback of 0x00000000, yet VCPU status stayed 0x4 across ten waits and GPU
+probe failed. A separate early PSP read of UVD_VCPU_CNTL at 0x20160 after
+host initialization returned 0x0ff20200, matching the host value and showing
+CLK_EN set. Thus the remaining failure is not simply a missing VCPU clock
+enable or a still-asserted reset after PSP release. The next read should
+inspect the LMI/UMC channel controls and then firmware-fetch behavior. The
+VCPU control trial used diagnostic boot bf4706fb-c8cf-4186-b763-2b5a870debf4;
+Pico mode 2, fault 0, routing mismatches 0. Journals in
+output/video-decode-20260922/results/late-vcn-postrelease-*.jsonl. No BIOS
+EEPROM or Pico flash write, and no decoded frame.
+
+The follow-up PSP read of UVD_LMI_CTRL2 (0x1fff4) after host initialization
+returned 0x003e0010, matching the host and showing both arbitration stall
+bits clear. It ran on diagnostic boot 7c392c81-39a3-431a-b696-c11c4c910112
+with the same guarded one-request module and no Pico routing fault. Journal:
+output/video-decode-20260922/results/late-vcn-postrelease-lmi-ctrl2-v01-20260927.jsonl.
+
+2026-09-27: PSP-visible clock gating, memory interface and trace
+------------------------------------------------------------------
+Six RAM-only Pico profiles measured UVD_CGC_GATE=0x00100000 (VCPU gate
+clear), UVD_CGC_CTRL=0x0000018c (VCPU mode and dynamic clock bits clear),
+and UVD_LMI_VM_CTRL=0 (VCPU uses physical addresses) after host init. After
+the 17 PSP-side map writes and real UVD reset release, UVD_LMI_STATUS was
+0x007c337f, matching the earlier host read. UVD_CGC_STATUS read as all
+ones, which is not a reliable clock-state result. PSP service 0x7c accepted
+a write to set UVD_VCPU_CNTL.TRCE_EN, but immediate PSP readback remained
+0x0ff20200. The trace bit either did not latch or self-cleared, so PC=0 is
+not proof of no firmware fetch. All six trials stayed at UVD_STATUS=0x4,
+GPU unbound; no decoded frame. The archived journals use the misleading
+field name soft_reset_low28 for the generic PSP diagnostic low bits; the
+runner now emits psp_diagnostic_low28. Journals:
+output/video-decode-20260922/results/late-vcn-postrelease-{cgc-gate,cgc-ctrl,cgc-status,lmi-status,lmi-vm-ctrl,vcpu-trace}-v01-20260927.jsonl.
+Current diagnostic boot 49f4995b-914b-4e1b-aabc-05cb1132567d; recovery
+entry armed, GPU unbound. No BIOS EEPROM or Pico flash write.
+
+2026-09-27: live UVD harvesting register identifies disable state
+---------------------------------------------------------------
+Two guarded RAM-only Pico trials cold-booted separately and read
+CC_UVD_HARVESTING at 0x1f81c through PSP service 0x7b after host init.
+The first read returned 0x00000003: bit0 MMSCH_DISABLE and bit1 UVD_DISABLE
+are both set in the VCN 2.0 register definition. This contradicts the
+earlier inference from a firmware discovery table with harvest=0; the table
+does not report this live register state. The second hook required initial
+value 3, issued PSP service 0x7c to write 0, then immediately read back
+value 3 again. The write service returned success, so the disable bits are
+not cleared by this runtime PSP register write. This does not yet distinguish
+physical fuse state from an earlier locked platform control. Linux treats
+the UVD_DISABLE bit as harvested hardware on other VCN generations.
+Both trials had Pico fault=0 and mismatches=0. VCPU status remained 4, GPU
+unbound, no decoded frame. Journals:
+output/video-decode-20260922/results/late-vcn-postrelease-uvd-harvest-v01-20260927.jsonl
+and late-vcn-postrelease-uvd-harvest-clear-v01-20260927.jsonl. Current
+diagnostic boot 4569661f-9f7e-4aea-a3c0-ef5770b00ef1, recovery armed.
+No BIOS EEPROM or Pico flash write. Next investigate the source/lock timing
+of the live harvested state before another VCN startup attempt.
+
+2026-09-27: early harvest timing and client-12 policy control
+-------------------------------------------------------------
+Three further cold-booted, RAM-only Pico profiles read CC_UVD_HARVESTING
+on the first VCN LOAD_IP_FW, before Linux host VCN startup. Read-only
+returned 0x3. Conditional PSP write0 when original=3 returned success but
+immediate readback remained 0x3. A third control omitted the experimental
+client-12 RSMU and SEC_GASKET policy writes; its direct early read also
+returned 0x3. Each intentionally encoded the readback in PSP diagnostic
+status 0x70000003, which caused that firmware load to fail. The experiments
+do not test a decoded frame. All Pico runs had fault0 and mismatches0.
+Journals and retained kernel logs are under
+output/video-decode-20260922/results/early-vcn-harvest-{read,clear,no-policy}-v01-20260927.*.
+The disabled register state is present before host VCN setup and independent
+of the tested client-12 policy; early and late PSP writes cannot clear it.
+Physical fuse provenance remains unverified. Current diagnostic boot
+5a532ddc-2ea9-4065-b6a9-69016e5f6d92, GPU unbound, recovery armed.
+No BIOS EEPROM or Pico flash write. No hardware decode yet.
+
+2026-09-27: early Trusted OS detour, SPI side channel and decrypted IPL
+-----------------------------------------------------------------------
+A signed first-instruction TOS detour at payload offset zero booted Fedora
+with all RAM-only Pico substitutions verified. Early svc 0x7b for
+CC_UVD_HARVESTING returned status 9 and sample 0, emitted through four
+original-flash read addresses; status 9 invalidates the sample. Two guards
+requiring status 0 had stopped at the cave, while the unconditional read-and-
+return control booted. This does not replace the valid later PSP-driver
+measurement of harvest=3 at the first VCN firmware request.
+
+Following Positive Technologies' published BC250 technique, six additional
+RAM-only interposer boots reconstructed the full 0xA800-byte decrypted IPL
+from 16-bit words encoded in read addresses. Private local file:
+output/pico2/tos-entry-ipl-slice-20260927/decrypted-ipl-0000-a7ff.bin,
+SHA256 2fe1046cb0ac338d86176bf59e8fdabd574954d1df5892fd8c674e40a2309141.
+Each slice had Pico fault 0, mismatches 0, verified substitutions and a
+subsequent Fedora boot. The binary begins with an ARM vector table and has
+no direct literal 0x1f81c or 16-bit 0xf81c. Indirect access or another boot
+component remains possible; the physical fuse source is not proven. No BIOS
+EEPROM or Pico flash write occurred. Current diagnostic boot
+1b672920-7490-4d23-8064-65188bdb1f57, /boot read-only, GPU unbound,
+PDU outlet on. No decoded frame yet.
+Read-only Ghidra import found 363 functions in the IPL, with no direct
+VCN harvest address in the decompile. Private text export is in the same
+output folder. A previously verified PSP read found cold-reset word
+0x0900c004 already 1 after VCN power-up, which weakens a simple write-1
+reset hypothesis.
+
+2026-09-28: PSP driver-startup service probe and recovery
+---------------------------------------------------------
+A signed RAM-only driver startup hook preserved the original initializer,
+called svc 0x7b for CC_UVD_HARVESTING, and issued SPI diagnostic reads. Pico
+reported 658/658 verified substitutions across two profile passes, fault 0,
+and routing mismatches 0. The board did not reach Fedora SSH. The captured
+first four SPI addresses were normal sequential firmware traffic, not the
+hook's encoded values, so no register result was obtained. A unique-marker
+variant passed local Thumb execution, signature and Pico compilation checks,
+but was not run because the same startup service call had stalled the board.
+Loaded known-good Pico CS-PASS v2 into SRAM, armed it with CS high, and used
+one PDU cold cycle; Fedora returned on boot
+a09bb1ff-8e95-4733-a26e-6ec61d1a0ffd. /boot is read-only and the recovery
+entry was consumed. The first VCN firmware request remains the earliest
+reliable PSP read of harvest=3. No BIOS EEPROM/Pico flash writes or decoded
+frame.
+
+2026-09-28: qualified PSP SMN versus GPU MMIO address interpretation
+--------------------------------------------------------------------
+Pinned Trusted-OS execution shows svc 0x7b maps numeric argument 0x1f81c
+through its SMN page selector to PSP aperture 0x0101f81c. Linux defines
+CC_UVD_HARVESTING at PCI GPU MMIO byte offset 0x1f81c; equal numeric offsets
+do not alone prove an alias. Archived same-boot measurements then supplied a
+critical cross-check: PSP reads of VCPU_CNTL at 0x20160, LMI_CTRL2 at 0x1fff4
+and LMI_STATUS at its numeric offset matched host-MMIO values 0x0ff20200,
+0x003e0010 and 0x007c337f. This strongly supports an alias for those VCN
+registers, so the real 0x3 SMN reading remains a serious harvest candidate.
+The specific 0x1f81c register has not been independently cross-checked through
+host MMIO, and ignored PSP write-zero does not prove a physical disable fuse.
+Signed PSP driver writes to unnamed VCN-header gaps 0x1f820 and 0x1f8a4 do
+not settle the address-space relationship. Host-MMIO all-ones readings for
+inaccessible windows and the failed ring test remain valid observations.
+Reproducer: tools/vcn-psp-diagnostics/verify_svc7b_address_space.py passed
+using pinned private Trusted OS, with no hardware or flash access. BC250
+remains on diagnostic boot a09bb1ff-8e95-4733-a26e-6ec61d1a0ffd and Pico
+CS-PASS v2. No decoded frame yet.
+
+2026-09-28: direct powered VCN harvest MMIO read
+------------------------------------------------
+A hash-pinned, default-off amdgpu module read the actual GPU BAR
+CC_UVD_HARVESTING register after adjacent VCN power and PGFSM values met its
+guard: power=0x800, pgfsm=0. The direct host line reports harvest=0x3,
+corroborating the prior PSP-side read. VCN 2.0 names bit0 MMSCH_DISABLE and
+bit1 UVD_DISABLE. This establishes the live disable state, but does not
+identify a physical fuse or earlier latch as its source. The firmware IP
+discovery table reports harvest=0 and therefore does not reflect this live
+register. The ring still timed out and no frame was decoded. Raw dmesg:
+output/video-decode-20260922/results/late-vcn-harvest-mmio-v01-20260928.dmesg,
+SHA256 21c12afed3a08c0ae201ed1b4a3f6a69d1a161b17b9b431432f4b816292b575f;
+runner JSONL beside it. Pico verified 2460/2460 substitutions over two boots,
+fault0 and mismatches0. Current BC250 diagnostic boot
+5702bead-bfb3-467f-b85c-c958e5942912, GPU unbound, /boot read-only,
+PDU outlet On and unused recovery entry removed. No BIOS EEPROM or Pico flash
+write. Further work should trace where the live disable bits originate; another
+cache/reset sequence is not a justified next experiment.
+An offline scan of 299 extracted UEFI PE/TE sections found no 32-bit
+little-endian literal 0x0001f81c or 0x0101f81c; this does not exclude a
+computed address or other early firmware.
+
+2026-09-28: powered host harvest write/readback remained 3
+--------------------------------------------------------
+On cold diagnostic boot 402e7717-62b4-4a4b-8786-e4a7408e3754, a pinned
+amdgpu module required the exact VCN/TMR allocations plus power=0x800,
+pgfsm=0 and initial harvest=3 before one host MMIO write of zero to
+CC_UVD_HARVESTING. Direct readback was still 3. Ring vcn_dec again timed out
+(-110), GPU did not bind, no decoded frame. This excludes the measured
+powered host write as a runtime override; it does not identify whether the
+value comes from an eFuse, an earlier lock, or a read-only register. Pico
+verified 3690/3690 substitutions with fault0/mismatches0. Ignored local
+evidence: output/video-decode-20260922/results/late-vcn-harvest-write-v01-20260928.dmesg
+SHA256 c1d71cae7bb8b82fdcd40eee090de8ccf2e514eca2553031a0bbe32e246bea06,
+and matching .jsonl SHA256 5b81467f4b3a84e8e5e2a5e0f78b636d61aecac561f9b61e0d966bf4877a036d.
+/boot read-only and unused recovery entry removed. No BIOS EEPROM or Pico
+flash write. No decoded frame yet.
+
+2026-09-28: original PSP video-control write omission control
+-------------------------------------------------------------
+Built a new signed PSP-driver profile for the RAM-only Pico interposer. It
+replaces only the native type-13 setup instruction at ROM 0x9938c2,
+SVC #0x7c, with Thumb `movs r0,#0`. The original request would have been
+0x1f820 <- 0x185103. The existing success guard still sees R0=0; all other
+non-signature profile bytes match the prior postcache-map-rx trial except
+the changed driver digest. Eight real-instruction TMR startup cases confirm
+the write is absent while allocation and cleanup paths return as expected;
+25 postload map cases pass. Generator allowlist and clean-ROM byte guard pass.
+Pico UF2 SHA256 6b0f393af69b3f485f8811fc3707088752cd900f2c51733237ff8cfd356223d9,
+loaded into Pico RAM only, profile 478 changed words/703 patch reads per pass.
+
+Fresh BC250 diagnostic boot 960c4549-0a87-475f-8952-297b3eedff7f came up
+under that profile. Pico verified 1406/1406 substitutions over two passes,
+fault0, mismatches0, late_decisions0 and rxstall0. A pinned host-MMIO read
+with power=0x800 and pgfsm=0 still reported CC_UVD_HARVESTING=3. The intact
+VCN firmware load returned ret0/status0, but UVD_STATUS remained the driver's
+busy write 4 through ten VCPU waits; vcn_dec ring test failed -110, GPU
+unbound, no decoded frame. Omission of this single original SVC write is
+insufficient to clear the operational disable state. It does not prove fuse
+provenance or resolve the SMN/MMIO alias for 0x1f820.
+Offline follow-up found the same tuple in the separately signed BC250
+SEC_GASKET section 0x201 at ROM 0x983068, unchanged by this trial. The pinned
+Cezanne/Renoir policies also carry it. Thus the trial isolates only the
+later DRIVER_ENTRIES service call, not every possible application of that
+tuple; whether the earlier policy record was applied live remains unproven.
+
+Ignored local evidence:
+output/video-decode-20260922/results/late-vcn-skip-native-control-v01-20260928.jsonl
+SHA256 843ea1b06cfa089ca3f86b57c9894af7dcf0d5c2f5d5be80b0915543c750cd46;
+matching dmesg SHA256 fab4a0027aae30467b67606bb050e568111d9b3f1522e99ec006c2795c988523.
+The unused one-time GRUB entry was removed and /boot remains read-only.
+Neither BIOS EEPROM nor Pico flash was written.
+2026-09-28: Two full boot RLE traces show an early 48x4-byte scan with three
+changed words in the first UEFI DF-lock candidate, and 788 changed bytes past
+the original 64-byte stream. Input-only Pico timing measured 45 short-scan
+CS# gaps: min 176 ns, median 235 ns; Fedora returned. An autonomous 3-word
+PIO selector passed digital replay but its first RAM-image load did not
+re-enumerate over Pi USB, so no active short-word board trial occurred.
+BC250 stayed up; its PDU outlet was then turned off for Pico recovery. USB
+port cycle did not restore enumeration. Asked user to reconnect Pico USB
+while holding BOOTSEL; stage known passive RAM CS relay, arm-pass before PDU on.
+No BIOS EEPROM or Pico QSPI flash write occurred.
+
+2026-09-28: Recompressed the same offline DF-lock patch with LZMA nice_len=273,
+243 bytes shorter than the original stream; padded FF to the original FFS file
+length so header and section lengths remain byte-identical. First SPI diff
+0xaede82; independent uefi_firmware parser accepts AmdPspDxeV2. Unflashed
+same-length ROM SHA256 ae9145cfa521107ebb7e553c39877a89f822ea1960e16f83a38485b9b5fe2331.
+Both complete traces cover all 20727 changed consecutive 64-byte replies on
+each of two UEFI passes, with no changed short scan or changed bytes after
+the original long read. Prepared ignored 1,327,104-byte Pico payload at flash
+offset 0x200000, 20,727-word RAM first-word table, and a RAM-only two-pass
+selector with Pico-payload SHA256 guard; built UF2 SHA256
+481567e8db0eb4964096838a0678af690f01d912f76146b7dc7fcd40542891be.
+Payload has NOT been written to Pico; candidate has NOT been tested on BC250.
+DF-lock/VCN connection remains hypothetical; do not BIOS-flash candidate.
+
+2026-09-28: Pi 5 recovery and early SEC_GASKET check/use trials
+---------------------------------------------------------------
+Restarted Pi 5 at the user's request after shutting the BC250 down; the Pico
+returned to passive QSPI. With PDU outlet 8 off, reloaded and armed the known
+CS-PASS v2 image in Pico RAM, then restored power. Fedora booted. A second Pi
+restart later recovered a Pico USB disappearance during a RAM-image load;
+the same CS-relay/PDU sequence restored Fedora. The RAM loader now auto-finds
+the Pico serial device after USB re-enumeration.
+
+The stock policy value 0x1f820 low16 was 0x5103 at ABL0 entry. The signed
+SEC_GASKET object at ROM 0x982000 contains 0x1f820 <- 0x185103 and is read
+twice before ABL0. A usage-31 policy re-signing control verified all 536 Pico
+responses without fault but stopped at SPI row 254472, before UEFI loading;
+the unchanged-value control did not reach Fedora. Its zero-value companion
+did run ABL0 with 0x1f820=0 but stopped at the same boundary. Instead, a
+RAM-only first-read-only substitution changed the first policy value while
+preserving its second read, original signature and usage-31 key. ABL0 read
+0x1f820=0 and the two boot passes completed with 1396/1396 verified, fault0;
+Fedora boot f55b5eb1-97ef-47a6-b5f3-643adec7aae8 was healthy. This is
+evidence of accepted divergent policy reads, not proof of the internal check
+order.
+
+The same method changed the adjacent 0x1f8a4 value from 0xb to zero; an
+ABL0 hook read zero on both passes. Separate ABL0 harvest hooks nevertheless
+read CC_UVD_HARVESTING=3 after clearing 0x1f820, 0x1f8a4, or both. A final
+first-read-only replacement of the policy tuple with 0x1f81c <- 0 also read
+harvest3 at ABL0. The combined-zero and direct-harvest-write profiles each
+verified 1398/1398 substitutions over two passes, fault0, and booted Fedora;
+the latest boot is f9a9e050-19a0-407f-989c-afa13fd33cfa. VA-API still
+fails initialization, no VCN IP block is registered, and no frame has been
+hardware decoded. These specific policy writes are not effective harvest
+overrides; fuse provenance remains unresolved. Ignored logs are in
+output/pico2/early-policy-live/. Neither BIOS EEPROM nor Pico QSPI was written.
+
+2026-09-28: guarded LMI control trial after Pi restart
+------------------------------------------------------
+The Pi 5 had already been restarted and the Pico RAM CS relay rearmed. For a
+bounded VCN experiment, loaded the hash-matched known-good postcache-map-rx
+interposer into Pico RAM, then used the APC PDU for one diagnostic cold boot.
+Pico verified 1402/1402 substitutions across two firmware reads, with zero
+faults, routing mismatches, late decisions and RX stalls. A pinned Fedora
+7.2.5 module tested the LMI_CTRL setting inferred from a PS5 manufacturing
+driver decompile (original ELF unavailable). The exact-state guard passed:
+power=800, PGFSM=0, version=2001b, harvest=3, VCPU=0ff20200. The volatile
+LMI_CTRL write changed 00307340 to 00307108 and read back 00307108. The
+post-power PSP VCN firmware load returned ret0/status0, but VCPU PC stayed
+zero, UVD_STATUS stayed the driver's BUSY=4 through ten waits, and the GPU
+remained unbound. No VCN frame was decoded. Module SHA256:
+56343ccf27087c59e3f86fb22536decc365519b4d4e8c25bac0e027cfd8a89e1.
+Ignored journal and dmesg are in output/video-decode-20260922/results/
+late-vcn-lmi-oracle-v01-20260928.*. BC250 diagnostic boot
+c7434188-0574-474c-b640-8cbd68f458bc is running with /boot read-only and
+the unused one-time recovery entry removed. Neither BIOS EEPROM nor Pico QSPI
+was written. The live harvest=3 state remains the more direct blocker.
+
+2026-09-28: first-read SEC_GASKET retarget cross-check
+------------------------------------------------------
+The Pi 5 and Pico responded normally during the trial. Built a
+RAM-only RP2350 UF2 (SHA256
+7fed0d4f5be392056f277464d96cbc76b59ba96fd3c827ed4cc7fc59ae85062e)
+with the same first-read-only 0x1f820 -> 0x1f81c policy tuple retarget as the
+earlier harvest-read trial, but with the signed ABL0 hook reading 0x1f820.
+Both ABL0 passes read zero (diagnostic SPI addresses 03c40000, 03c40000);
+the earlier matching trial read CC_UVD_HARVESTING=3. Pico completed both
+passes with 1398/1398 substitutions verified, no fault, mismatch or RX stall.
+BC250 boot 2c11882a-1254-4608-b325-a4d2092a71fd reached normal Fedora,
+amdgpu bound, /boot read-only. VA-API still fails and no VCN frame decoded.
+This supports that the original 0x1f820 policy effect was avoided; it does
+not prove that the redirected write reached VCN or explain harvest=3. The
+ignored Pi log SHA256 is
+935f33ff1546e960b80d26e54811a18c18e60d6af80808cd9b809e2ad0a4491c.
+After capture, restarted the Pi 5 at the user's request (new boot ID
+9539591b-cc47-421f-b63f-6f08fd3ecbe4). Pico returned in passive mode,
+then known CS-PASS v2 was loaded into RAM and armed with host_cs=1 and
+miso=INPUT. BC250 remained on the same normal Fedora boot. Neither BIOS
+EEPROM nor Pico QSPI was written.
+2026-09-28: Pi 5 remote restart and Van Gogh SMU pointer cross-check
+-------------------------------------------------------------------
+Restarted Pi 5 over SSH at user's request. Boot ID changed from
+9539591b-cc47-421f-b63f-6f08fd3ecbe4 to
+086fe946-1318-48bc-a5e5-b7b46037a87a. Pico USB returned as ttyACM0 in
+QSPI PASSIVE v1. Verified staged CS-PASS v2 UF2 SHA256
+70b5af760d37bd4a30b4c0efc35d758cbfb5c415563a63b3f093844660e3829d,
+loaded it into Pico RAM, and armed the relay. Status is armed=1 gate=1
+host_cs=1 miso=INPUT bios_write=UNAVAILABLE. BC250 remained on normal Fedora
+boot 2c11882a-1254-4608-b325-a4d2092a71fd with amdgpu bound and /boot
+read-only. No BIOS EEPROM or Pico QSPI write.
+
+Imported the pinned decompressed ABL3 and Van Gogh SMU images into Ghidra.
+ABL3 has no direct 32-bit little-endian literals for 50d6c, 511b4, 1f81c,
+or 1f820; a visible SVC 1b is an error-reporting path, not evidence of a DF
+lock. Van Gogh function 2bf30 writes 1 to clock-enable 0116f200, then reads
+fabric 50d6c and only takes the 511b4/26984 VCN path if bits 11:12 are set.
+The captured BC250 SMU has feature-11 machinery but lacks these direct
+register literals. This is a qualified static result, not a live VCN fix.
+Operational harvest remains 3 and no VCN hardware frame has decoded.
+2026-09-28 18:07 UTC: Pi 5 restarted at user's request; boot ID changed
+086fe946-1318-48bc-a5e5-b7b46037a87a to
+07bcc707-ca2d-49f0-9a32-c1e9abe95a32. Verified CS-PASS v2 was reloaded
+to Pico RAM and armed (host_cs=1, miso=INPUT, bios_write=UNAVAILABLE).
+BC250 stayed on boot 433d0c0b-5d62-4915-be73-722fb2497fe9, healthy.
+Ghidra emulation passed six write-only and six read-only helper cases. The
+new 90-byte Xtensa helper SHA256 is
+eafebd45e986ab1cc1f48cfe33054942cf794ab6e27caa2d7b00f06b9957283c.
+Its guarded, volatile direct store of zero to Van Gogh clock-enable address
+0116f200 returned status1/result0. A subsequent zero/one/zero trial returned
+status1 for every store; V2.2 GPU metrics VCLK/DCLK stayed 0/1111 MHz.
+The target was not read directly (earlier direct read stalled); helper SRAM
+and dispatch were restored and verified, SMU/governor alive, timer cancelled.
+Ignored trial log SHA256
+fdf8891aeb5562672cc1c1681aacd7ee9227f29a8d5c5dfc2c4425fbccc6d5d9.
+No BIOS EEPROM or Pico QSPI write, and no hardware-decoded VCN frame.
+Pinned 16-byte raw-code comparison found zero nontrivial exact windows for
+Van Gogh SMU VCN entry 2bf30..2c007 or inner 26984..26caf in BC250 SMU SRAM.
+Van Gogh generic SMN read/write control routines each had 54 matching windows.
+This is only a byte comparison, not proof that BC250 lacks equivalent code.
+
+2026-09-28: native VCN clock callback and full startup cross-check
+------------------------------------------------------------------
+The SMU scheduler invokes callback-table entry 24 at c760, pointing to the
+native clock-table walker at 2e448. A read-only pinned preflight and offline
+ordering test passed. Staging Q3 0x1d's 1250 MHz VCN request BEFORE advancing
+the table generation let the callback apply it: generations [1,1], desired
+and applied words 449c4000, slot 17 current/remembered code 16, hardware
+clock code 16, and normal-boot GPU metrics VCLK 1250 MHz. This explains the
+earlier zero-VCLK trial, which triggered the walker before staging the target.
+The three VCN slot gates, domain gate and domain-up commands then read back as
+expected, but UVD_VERSION, STATUS and POWER_STATUS stayed all ones on the
+normal boot. The board was cold-cycled after the volatile one-shot state.
+
+An opt-in diagnostic boot with the known postcache-map-rx Pico RAM image
+verified 1402/1402 substitutions across two firmware passes, fault0. A new
+guarded runner applied native clock code16 and the tested VCN gate/power
+sequence before loading the pinned LMI-oracle VCN module. Linux read powered
+UVD_VERSION 2001b and PSP LOAD_IP_FW returned ret0/status0, but live
+CC_UVD_HARVESTING remained 3, host reads of SOFT_RESET and cache registers
+returned ffffffff, VCPU trace PC sampled 0, status remained BUSY=4 through
+ten waits, and the VCN
+decode ring failed -110. GPU did not bind; no hardware frame decoded.
+Ignored journals and the full kernel log are in
+output/video-decode-20260922/results/{clock-callback-once,clocked-gate-probe,native-clock-vcn-startup}-20260928.*.
+
+The staged diagnostic recovery entry was consumed and cleaned. One normal
+boot with the diagnostic Pico profile failed PSP SETUP_TMR, so the verified
+CS-PASS v2 UF2 was reloaded and armed in Pico RAM, followed by an isolated
+outlet-8 cold cycle. BC250 normal boot 1b96afe0-76d3-4288-99b4-d9515fabfe31
+has amdgpu bound, GPU governor active, DPM auto, /boot read-only and no GRUB
+diagnostic entry. Pi PDU recovery timer is inactive. Neither BIOS EEPROM nor
+Pico QSPI flash was written. The observed harvest value is not a proven
+writable start control; the responsive VCN reset/cache path remains missing.
+
+2026-09-29: VCN harvest is an indication; matched gasket policy isolation
+------------------------------------------------------------------------
+On a diagnostic boot with the same signed driver and native SMU VCLK code 16,
+the full 51-row client-12 SEC_GASKET policy made PGFSM/POWER/VERSION readable
+immediately after real PSP SETUP_TMR: 00200000/801/deadbeef. Local power
+gating then gave 0/800/2001b, while CC_UVD_HARVESTING stayed 3 and VCPU
+status stayed 4. Thus clearing harvest is not required to power the tile,
+though physical read-only behavior and an upstream VCPU gate remain unproved.
+Global-only, 1f844-only, early-half, late-half, and two 41-row pairings all
+left VCN reads ffffffff after SETUP_TMR. Four matched 46-row profiles omitted
+one of 20108..17, 21078..7f, 20eb0..b7, or 1f860..63; each also left the
+aperture all-ones. Pico verified all expected substitutions with zero fault,
+mismatch, late decision or RX stall. These four policy windows are necessary
+in the replayed setup, but the direct effect of each is not established.
+Journals, kernel logs, hashes and limitations are in docs/video-decode-next-step.md.
+
+Linux UVD segment 1 base 7e00 plus VCN 2.0 register offsets yields reset
+byte address 20180 and firmware-cache BAR low 2107c, matching the PSP service
+targets. The host all-ones reads are not a simple base-offset mistake. Two
+idle-boot root PCI SMN sweeps read the VCN addresses as all ones on a negative
+control, with live GFX control 48140880. A timed root-SMN monitor during a
+full-policy startup coincided with a BC250 hang before either tool saved a
+trace. Do not repeat concurrent root-SMN polling. PDU cold cycle recovered
+the board; the first normal boot had an unbound GPU under the experimental
+Pico profile. Verified CS-PASS v2 was armed from RAM and one outlet-8 cycle
+restored normal Fedora boot 68d4b697-5877-49db-93ae-57df30a7905e:
+amdgpu bound, schedutil active, /boot read-only, Pi timer stopped. No BIOS
+EEPROM or Pico QSPI flash write, and no VCN-decoded frame.
+
+2026-09-29: read-only early VCN gasket baseline
+------------------------------------------------
+A signed Trusted-OS entry hook read direct PSP-aperture words 0900c234=0
+and 0900c9a0=0 before Trusted OS ran, while 1f81c (CC_UVD_HARVESTING)
+already read 3. Its native ARM model and signed-view checks passed. The Pico
+verified all 620 substitutions across two firmware passes with no fault,
+mismatch, late decision or RX stall. Fedora booted with amdgpu bound. The
+full-policy late PSP readback of 0900c9a0 was 20180, so the early descriptor
+was not yet programmed in this access path. This does not establish whether
+early policy timing causes the missing VCPU-ready bit. The probe and log are
+under output/pico2/tos-entry-gasket-read-20260929; log SHA256
+03d159ee969cdbce96599fc6ca12fe911dbd11a40867e659e28ffa452e240ccd.
+No BIOS EEPROM or Pico QSPI write; no decoded frame.
+
+2026-09-29: early-plus-late client-12 policy VCN trial
+-------------------------------------------------------
+The read-only TOS entry baseline found 0900c9a0=0 and harvest=3. A RAM-only
+signed TOS hook then replayed all 51 client-12 SEC_GASKET rows at entry and
+read back descriptor 0900c9a0 low16=0180, matching the planned 20180. In a
+separate diagnostic boot, the combined early TOS hook and late signed PSP
+driver/authentic VCN key/TMR profile completed both BIOS passes. The Pico
+verified 1558/1558 substitutions, fault0, mismatch0, late_decisions0 and
+rxstall0. Native SMU VCLK code16 and domain gates were applied. Powered VCN
+reported power=800, PGFSM=0, version=2001b, but harvest remained 3;
+firmware-cache and soft-reset host reads remained ffffffff. The VCPU PC was
+0 before and after release, status stayed 4, and decode-ring init failed
+-110. The PC sample cannot prove lack of execution because trace enable did
+not demonstrably latch. Early policy timing alone did not make the VCPU
+report ready. The hardware
+read-only status of harvest remains unproved; treat it as an indicator.
+Evidence and limitations: docs/video-decode-next-step.md and ignored
+output/pico2/tos-entry-gasket12-combined-20260929/physical.
+
+The diagnostic entry was cleaned, verified CS-PASS v2 armed from Pico RAM,
+and outlet 8 cold-cycled. Fedora normal boot
+2913c705-d2be-451f-bc7b-700bf057c4f3 is running with amdgpu bound,
+/boot read-only, no diagnostic GRUB entry, PDU on, and the Pi recovery timer
+inactive. Neither BIOS EEPROM nor Pico QSPI was written; no hardware frame
+decoded.
+
+2026-09-29: successful PSP reload after PSP-side reset release
+---------------------------------------------------------------
+The earlier reset-stability PSP hook encoded a diagnostic failure status,
+so it had not tested a successful firmware reload after reset release. A
+new signed RAM-only profile combined the early 51-row client-12 gasket
+replay with the late post-cache hook. The hook wrote zero to PSP address
+0x20180 and checked the reset-bit readback before returning success. Native
+model/signature/profile checks passed; the Pico verified 1854/1854 sparse
+substitutions across two boot passes without routing fault. On diagnostic
+boot 5d0cb821-d07d-4a75-9634-1d7c77aa659d, native VCLK code16 and
+the guarded gate/power sequence applied; post-release PSP LOAD_IP_FW
+returned ret0/status0. UVD_STATUS remained 4 through ten waits and the
+GPU did not bind. Linux writes the 0x4 BUSY bit before VCPU release; no
+VCPU-ready bit 0x2 appeared. PSP reset readback does not establish host
+reset/cache accessibility, which remained all ones. This does not prove
+harvest=3 is a writable start control, or physically read-only. See the
+trace and limitations in docs/video-decode-next-step.md. The temporary
+GRUB entry was cleaned, CS-PASS v2 rearmed in Pico SRAM and outlet 8
+cold-cycled. Normal Fedora boot de61e637-8f17-4c48-b9c9-e8b4e810433d
+has amdgpu bound, /boot read-only, PDU on and recovery timer inactive.
+No BIOS EEPROM or Pico QSPI flash write; no decoded frame.
+
+2026-09-29: PSP before/after VCN cache BAR route comparison
+-----------------------------------------------------------
+Two signed RAM-only Pico profiles used byte-identical early 51-row TOS
+policy, native VCLK code16 and the same guarded postrelease kernel module.
+Both hooks positively checked PSP UVD_POWER_STATUS=0x800. On diagnostic
+boot ad6cb862-f3c3-4a73-aeb6-e55717158fd0, a PSP read of cache BAR low
+0x2107c before any PSP cache write reported low28=0, although Linux had
+attempted to write 0x1fa00000 and host MMIO read back ffffffff. On boot
+b9459d49-61ae-4cbd-a928-ee969903ff52, the PSP wrote 17 pinned cache
+windows, then read 0x2107c as low28=0x0fa00000, matching its own
+0x1fa00000 write. The diagnostic statuses 0x70000000 and 0x7fa00000
+deliberately aborted LOAD_IP_FW; the runner field called reset_low28 holds
+the cache BAR value here. Native PSP instruction checks passed 8 and 28
+cases. Pico substitutions verified 1654/1654 and 1858/1858 respectively,
+with zero faults/mismatches/late decisions/RX stalls. This is evidence of
+an access-path difference at the cache BAR; it does not establish whether
+host routing, an isolation gate, or PSP shadowing explains it. Prior
+successful PSP mapping/reset release still did not start the VCPU, so
+CC_UVD_HARVESTING=3 remains a disable indication, not a known start switch.
+Details and log hashes are in docs/video-decode-next-step.md. Restored
+CS-PASS v2 in Pico SRAM and normal Fedora boot
+9ce1c8eb-de37-4d7b-b159-22974eee2bb4 with amdgpu bound, /boot read-only,
+no diagnostic GRUB entry, PDU on and recovery timer inactive. No BIOS
+EEPROM or Pico QSPI writes. No decoded frame.
+
+2026-09-29: rejected mislabelled Queue-0 VCN power opcode
+-------------------------------------------------------
+A public BC250 message atlas labels Q0 0x0c PowerUpVcn, but its own kernel
+mapping and the original bc250_smu client identify Q0 0x0b/0x0c as
+RequestCorePstate/QueryCorePstate. The captured 256-KiB PMFW dispatches
+Q0 0x0c to handler 0x22ab4, which bounds its argument to core ID 0..7
+and returns per-core state. Read-only Ghidra audit of all Q0 handlers found
+zero direct static-call paths to the previously identified generic domain
+power or slot-clock routines; computed callbacks remain outside the audit.
+Q0 0x0c is not a justified VCN power-up test. See
+docs/video-decode-next-step.md and
+tools/vcn-psp-diagnostics/Bc250SmuQ0Reachability.java. No board action,
+EEPROM or Pico QSPI write was made; normal Fedora/Pico state unchanged.
+
+2026-09-29: Queue-3 call-graph bound corrected
+----------------------------------------------
+The pinned SMU dispatcher's Queue-3 count is 0xa9, with table base 0x7464.
+The previous offline audit scanned through opcode 0xc0 and incorrectly
+counted handlers at 0xb4..0xbd, which the dispatcher rejects before lookup.
+Re-running the SHA-pinned, read-only Ghidra audit gives five dispatchable
+Q3 handlers reaching generic slot-clock programming and six reaching the
+generic domain-power routine (previous counts nine and eleven). Q3 0x09
+remains a null table entry. The corrected result is
+output/video-decode-20260922/results/smu-msg-reachability-20260929.txt,
+SHA256 8bc825fefc553a229b8291dd9c9d705fed8cd5318daf13edae67258eb780b7bf.
+No board action or flash write occurred.
+
+2026-09-29: all SMU queues checked for direct power call paths
+--------------------------------------------------------------
+Read-only Ghidra audit of the same SHA-pinned 88.6.0 SMU image checked
+the actual declared table base/count for Queues 0..4. Q1 0x10 reaches
+generic power code but its handler ignores the message argument and
+calls the domain-7 helper, not domain 6. Q2 0x27/0x28 share the
+Q3 0x5c/0x5d slot-clock handlers and target slots 0x0e..0x12, not the
+known VCN slots 0x16..0x18. The domain-6 shutdown helper has no direct
+recognized caller, and no explicit domain-6-up helper emerged. Indirect
+callbacks remain outside the audit. Details and result hash are in
+docs/video-decode-next-step.md. No board or flash writes.
+
+2026-09-29: host and PSP agree on a live VCN scratch register
+------------------------------------------------------------
+The first two guarded VCN boots tried JPEG decoder scratch 0x1e224 as a
+host/PSP positive control, but both SOC15 and absolute BAR reads returned
+deadbeef in the VCN-only path. The prior live JPEG scratch test had started
+the separate JPEG block, so those boots correctly skipped their PSP read.
+The corrected RAM-only profile used VCN-owned scratch1 at 0x1f854. Host
+SOC15 and absolute BAR reads were zero; a guarded write/read produced
+5a13c0de and restored zero after the PSP request. The signed PSP hook
+reported diagnostic 7a13c0de, matching the sentinel's low 28 bits.
+Pico verified 1,654/1,654 substitutions over two passes, mismatch0/fault0.
+This rules out a blanket host/PSP VCN route split but does not identify
+the cache/reset gate or start the VCPU. No frame decoded or flash write.
+Details and hashes are in docs/video-decode-next-step.md. BC250 normal
+Fedora boot d2a18690-dd65-4d01-b358-c3dd774d76a3 has amdgpu bound,
+/boot read-only, no custom GRUB entry, CS-PASS v2 armed in Pico SRAM,
+and Pi PDU recovery timer inactive.
+
+2026-09-29: Deck policy delta and direct diagnostic iteration
+-------------------------------------------------------------
+The verified Steam Deck early policy differs from BC250 at 0x1f8a4
+(0xf versus 0xb) and has 27 client-12 rows where BC250 has none. A
+RAM-only first-read Pico substitution made BC250 ABL0 read back 0xf, but
+the paired ABL0 harvest read still returned 3; both boots reached Fedora
+with 1,396/1,396 substitutions verified and zero Pico faults. A separate
+53-row early hybrid retained the four Cezanne windows needed for VCN
+register access while changing seven rows and adding two Deck rows. Its
+Pico profile verified 1,870/1,870 substitutions across two passes and
+reached an opt-in VCN diagnostic boot. Native VCLK code 16, domain gates
+and PSP firmware load succeeded, but UVD_STATUS remained 4, VCPU PC zero,
+and the decode ring timed out. The exact hybrid is therefore insufficient
+for video decoding. Full evidence is in docs/video-decode-next-step.md.
+No BIOS EEPROM or Pico QSPI writes occurred. The board is now in clean
+diagnostic boot 7ec6d4e6-444a-48a9-b6e4-4744421d11a8 with Pico
+vcn-psp-bo-fetch armed, /boot read-only, no GRUB entry and no PDU timer.

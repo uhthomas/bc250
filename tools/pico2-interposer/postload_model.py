@@ -26,13 +26,14 @@ word = lambda x: struct.pack('<I', x)
 def run_case(context, smn_result, mapping_result, existing_aux_flag,
              driver_override=None, expected_result=None, expected_smn_addresses=None,
              readback=None, readback_address=0x0900c004, extra_write=None,
-             readbacks=None, loaded_before=0):
+             readbacks=None, loaded_before=0, extra_writes=None,
+             extra_results=None, extra_mapping=None):
     m = uc.Uc(uc.UC_ARCH_ARM, uc.UC_MODE_THUMB)
     m.mem_map(0xe00000, 0x18000, uc.UC_PROT_READ | uc.UC_PROT_EXEC)
     m.mem_map(0xe18000, 0x98000, uc.UC_PROT_READ | uc.UC_PROT_WRITE)
     m.mem_write(0xe00000, driver if driver_override is None else driver_override)
     m.mem_map(STACK, 0x10000)
-    m.mem_map(MAPPING, 0x1000)
+    m.mem_map(MAPPING, 0x2000)
     m.mem_map(STOP, 0x1000, uc.UC_PROT_READ | uc.UC_PROT_EXEC)
     m.mem_write(MAPPING, b'\xa5' * 0x1000)
     # Synthetic allocated TMR state, explicitly not a capture of hardware RAM.
@@ -44,6 +45,7 @@ def run_case(context, smn_result, mapping_result, existing_aux_flag,
                  (UC_ARM_REG_SP, STACK+0x8000), (UC_ARM_REG_LR, STOP|1)):
         m.reg_write(r, v)
     events, writes = [], []
+    read_counts = {}
     returned = False
 
     def code(mu, address, size, user):
@@ -55,15 +57,29 @@ def run_case(context, smn_result, mapping_result, existing_aux_flag,
             hi, lo, length, slot_pointer = [mu.reg_read(r) for r in REGS]
             sp = mu.reg_read(UC_ARM_REG_SP)
             destination_pointer = struct.unpack('<I', mu.mem_read(sp, 4))[0]
-            assert length == 0x1000 and (hi << 32 | lo) == 0xf400162ec0
+            target = hi << 32 | lo
+            assert length == 0x1000
             assert STACK <= slot_pointer < STACK+0x10000
             assert STACK <= destination_pointer < STACK+0x10000-4
-            events.append({'stub': 'map_buffer', 'address': hex(hi << 32 | lo),
-                           'bytes': length, 'result': hex(mapping_result)})
-            if mapping_result == 0:
+            if extra_mapping is not None and target == extra_mapping[0]:
+                helper_args = struct.unpack('<6I', mu.mem_read(sp, 24))
+                expected_attr = extra_mapping[3] if len(extra_mapping) > 3 else 0xfffffffe
+                assert helper_args == (destination_pointer, 0, 0, 0xffff,
+                                       0, expected_attr), helper_args
+                assert mu.mem_read(slot_pointer, 1) == b'\xff'
+                service_result, mapped_address = extra_mapping[1], MAPPING + 0x1000
+                payload = extra_mapping[2]
+                assert len(payload) <= 0x1000
+                mu.mem_write(mapped_address, payload)
+            else:
+                assert target == 0xf400162ec0
+                service_result, mapped_address = mapping_result, MAPPING
+            events.append({'stub': 'map_buffer', 'address': hex(target),
+                           'bytes': length, 'result': hex(service_result)})
+            if service_result == 0:
                 mu.mem_write(slot_pointer, b'\x01')
-                mu.mem_write(destination_pointer, word(MAPPING))
-            mu.reg_write(UC_ARM_REG_R0, mapping_result)
+                mu.mem_write(destination_pointer, word(mapped_address))
+            mu.reg_write(UC_ARM_REG_R0, service_result)
             mu.reg_write(UC_ARM_REG_PC, mu.reg_read(UC_ARM_REG_LR))
 
     def interrupt(mu, number, user):
@@ -75,8 +91,11 @@ def run_case(context, smn_result, mapping_result, existing_aux_flag,
         if svc == 0x7c:
             address, value, size, _ = [mu.reg_read(r) for r in REGS]
             assert ((address in (0x0900c004, 0x1f8a4) and value == 1) or
-                    (extra_write is not None and (address, value) == extra_write)) and size == 4
-            service_result = smn_result[address] if isinstance(smn_result, dict) else smn_result
+                    (extra_write is not None and (address, value) == extra_write) or
+                    (extra_writes is not None and extra_writes.get(address) == value)) and size == 4
+            service_result = (extra_results[(address, value)]
+                              if extra_results is not None and (address, value) in extra_results else
+                              smn_result[address] if isinstance(smn_result, dict) else smn_result)
             events.append({'stub_svc': '0x7c', 'address': hex(address), 'value': value,
                            'bytes': size, 'result': hex(service_result)})
             mu.reg_write(UC_ARM_REG_R0, service_result)
@@ -89,7 +108,14 @@ def run_case(context, smn_result, mapping_result, existing_aux_flag,
                 service_result, value = readback
             else:
                 assert address in readbacks
-                service_result, value = readbacks[address]
+                entry = readbacks[address]
+                if isinstance(entry, list):
+                    index = read_counts.get(address, 0)
+                    assert index < len(entry)
+                    service_result, value = entry[index]
+                    read_counts[address] = index + 1
+                else:
+                    service_result, value = entry
             if service_result == 0:
                 mu.mem_write(output, word(value))
             events.append({'stub_svc': '0x7b', 'address': hex(address),
@@ -113,14 +139,19 @@ def run_case(context, smn_result, mapping_result, existing_aux_flag,
     m.hook_add(uc.UC_HOOK_CODE, code)
     m.hook_add(uc.UC_HOOK_INTR, interrupt)
     m.hook_add(uc.UC_HOOK_MEM_WRITE, store)
-    m.emu_start(0xe0fb19, STOP+2, timeout=1000000, count=10000)
+    try:
+        m.emu_start(0xe0fb19, STOP+2, timeout=1000000, count=10000)
+    except uc.UcError as error:
+        raise AssertionError(f'PSP native execution stopped at '
+                             f'{m.reg_read(UC_ARM_REG_PC):#x}; '
+                             f'last events {events[-5:]}') from error
     assert returned
     result = m.reg_read(UC_ARM_REG_R0)
     expected = 0 if existing_aux_flag else mapping_result
     assert result == (expected if expected_result is None else expected_result)
     addresses = (expected_smn_addresses if expected_smn_addresses is not None else
                  (['0x900c004', '0x1f8a4'] if context == 0xffff else ['0x1f8a4']))
-    assert [x['address'] for x in events if x.get('stub_svc') == '0x7c'] == addresses
+    assert [x['address'] for x in events if x.get('stub_svc') == '0x7c'] == addresses, events
     return {'context': hex(context), 'smn_stub_result': (
                 {hex(key): hex(value) for key, value in smn_result.items()}
                 if isinstance(smn_result, dict) else hex(smn_result)),

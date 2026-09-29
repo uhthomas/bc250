@@ -48,6 +48,15 @@ bc250_postpower_readback:
     cmp.w r0, #0x800
     bne 4f
 
+#ifdef BC250_WRITE_CACHE
+    /* The host already programmed this word; test PSP write visibility. */
+    ldr r0, =0x2107c
+    ldr r1, =0x1fa00000
+    movs r2, #4
+    svc #0x7c
+    cbnz r0, 3f
+#endif
+
     /* Only the post-power call reports the selected register. */
     movs r0, #0
     str r0, [sp]

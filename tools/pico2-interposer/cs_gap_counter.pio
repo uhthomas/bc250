@@ -1,0 +1,16 @@
+; Input-only host-CS# high-gap counter. Each loop consumes two PIO cycles.
+; The pushed word is 0xffffffff minus the number of high-loop iterations;
+; DMA stores a bounded window beginning near the UEFI 64-byte read sequence.
+.program cs_gap_counter
+.wrap_target
+start:
+    wait 1 gpio 2
+    mov x, ~null
+high:
+    jmp pin tick
+    mov isr, x
+    push block
+    jmp start
+tick:
+    jmp x-- high
+.wrap

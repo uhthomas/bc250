@@ -23,7 +23,7 @@ def load_module(path):
 
 def run(tmr, rom, fill, region_bytes, occupied, fail_video_control=False,
         expect_guard_error=False, expect_rsmu=False, gasket_rows=(),
-        fail_gasket_at=None):
+        fail_gasket_at=None, skip_native_video_control=False):
     s = tmr.startup
     s.DRIVER = rom[0x984f00:0x99f670]
     m = tmr.initial_machine(fill)
@@ -126,8 +126,9 @@ def run(tmr, rom, fill, region_bytes, occupied, fail_video_control=False,
         assert model.regions[36] == (tmr.TMR_BASE+0x300000-1) >> 16
         assert model.regions[40] == 0x37 and model.regions[44] == 0xc22
         assert (tmr.TMR_BASE+0x200000-1) < (tmr.TMR_BASE+0x200000)
-        assert any(e['svc'] == '0x7c' and e['arguments'][:2] == ['0x1f820', '0x185103']
-                   for e in model.events)
+        native_writes = [e for e in model.events if e['svc'] == '0x7c' and
+                         e['arguments'][:2] == ['0x1f820', '0x185103']]
+        assert len(native_writes) == (0 if skip_native_video_control else 1)
     assert bytes(m.mem_read(metadata+0x10, 12)) == expected[0x10:0x1c]
     rsmu_events = [(int(e['arguments'][0], 16), int(e['arguments'][1], 16))
                    for e in model.events if e['svc'] == '0x7c' and
@@ -160,31 +161,45 @@ def main():
                     help='Expect the profile to run the signed client-12 RSMU helper after video allocation')
     ap.add_argument('--gasket-table', type=Path,
                     help='Expect the scoped client-12 policy writes after video allocation')
+    ap.add_argument('--skip-native-video-control', action='store_true',
+                    help='Assert the original 0x1f820 write is omitted and startup still returns')
     a = ap.parse_args()
+    if a.skip_native_video_control and not a.guard:
+        ap.error('--skip-native-video-control requires --guard')
     tmr = load_module(a.tracer)
     rom = a.rom.read_bytes()
     assert len(rom) == 0x1000000
     gasket_rows = [tuple(int(word, 16) for word in pair)
                    for pair in re.findall(r'\.word (0x[0-9a-f]+), (0x[0-9a-f]+)',
                                           a.gasket_table.read_text())] if a.gasket_table else []
-    assert not a.gasket_table or len(gasket_rows) == 51
+    assert not a.gasket_table or len(gasket_rows) in (9, 14, 29, 31, 41, 46, 51)
+    if gasket_rows:
+        assert gasket_rows[0] == (0x0900c234, 0)
+        assert gasket_rows[-1] == (0x0900c234, 1)
     results = [run(tmr, rom, fill, size, False, expect_rsmu=a.rsmu,
-                   gasket_rows=gasket_rows)
+                   gasket_rows=gasket_rows,
+                   skip_native_video_control=a.skip_native_video_control)
                for fill in (0xa5, 0x5a) for size in (0x400000, 0x800000)]
     results += [run(tmr, rom, fill, 0x400000, True, expect_rsmu=a.rsmu,
-                    gasket_rows=gasket_rows)
+                    gasket_rows=gasket_rows,
+                    skip_native_video_control=a.skip_native_video_control)
                 for fill in (0xa5, 0x5a)]
     # The installed allocator ignores this particular video-control SVC
     # return value. Record the limitation instead of treating it as proof of
     # successful silicon control or guaranteed error propagation.
     results.append(run(tmr, rom, 0xa5, 0x400000, False,
-                       fail_video_control=True, expect_guard_error=a.guard,
-                       expect_rsmu=a.rsmu, gasket_rows=gasket_rows))
-    assert results == [0]*4 + [0xffff0008]*2 + [0xffff0000 if a.guard else 0]
+                       fail_video_control=True,
+                       expect_guard_error=a.guard and not a.skip_native_video_control,
+                       expect_rsmu=a.rsmu, gasket_rows=gasket_rows,
+                       skip_native_video_control=a.skip_native_video_control))
+    assert results == [0]*4 + [0xffff0008]*2 + [
+        0xffff0000 if a.guard and not a.skip_native_video_control else 0]
     if gasket_rows:
         assert run(tmr, rom, 0xa5, 0x400000, False, expect_rsmu=a.rsmu,
-                   gasket_rows=gasket_rows, fail_gasket_at=8) == 0xffff0001
-    outcome = 'propagated' if a.guard else 'ignored'
+                   gasket_rows=gasket_rows, fail_gasket_at=8,
+                   skip_native_video_control=a.skip_native_video_control) == 0xffff0001
+    outcome = ('omitted' if a.skip_native_video_control else
+               'propagated' if a.guard else 'ignored')
     print(f'PASS: {8 if gasket_rows else 7} scoped native video-TMR cases; '
           'regions do not overlap; '
           f'video-control SVC error is {outcome}; RSMU12 helper={a.rsmu}; '

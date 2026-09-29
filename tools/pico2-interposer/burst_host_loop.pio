@@ -1,0 +1,25 @@
+; On-chip host for a repeated 64-byte READ03 timing test. PIO2 drives only
+; unwired GP9=CS#, GP10=SCK, GP11=MOSI. It emits 10 PIO cycles per SPI bit
+; at 340 MHz (34 MHz SPI) and a caller-selected CS# high gap.
+; TX words per transaction: high-gap loop count, 543, command, 16 dummy words.
+.program burst_host_loop
+.side_set 1
+.wrap_target
+start:
+    set pins, 1 side 0
+    pull block side 0
+    mov x, osr side 0
+    out null, 32 side 0
+high_gap:
+    jmp x-- high_gap side 0
+    set pins, 0 side 0
+    pull block side 0
+    mov x, osr side 0
+    out null, 32 side 0
+data_bit:
+    out pins, 1 side 0 [3]
+    nop side 1 [4]
+    jmp x-- data_bit side 0
+    set pins, 1 side 0
+    jmp start side 0
+.wrap

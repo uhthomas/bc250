@@ -175,6 +175,268 @@ pico_set_program_name(bc250_cs_pass_stream "BC250 CS pass-through RLE command st
 pico_set_program_version(bc250_cs_pass_stream "0.2-ram")
 pico_add_extra_outputs(bc250_cs_pass_stream)
 
+# RAM-only, input-only capture of one UEFI SPI read burst while the original
+# flash remains connected through the GP7 CS# relay.
+add_executable(bc250_cs_pass_burst_snapshot cs_pass_burst_snapshot.c)
+pico_set_binary_type(bc250_cs_pass_burst_snapshot no_flash)
+pico_generate_pio_header(bc250_cs_pass_burst_snapshot ${CMAKE_CURRENT_LIST_DIR}/cs_open_drain.pio)
+pico_generate_pio_header(bc250_cs_pass_burst_snapshot ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+pico_generate_pio_header(bc250_cs_pass_burst_snapshot ${CMAKE_CURRENT_LIST_DIR}/bus_snapshot.pio)
+target_compile_options(bc250_cs_pass_burst_snapshot PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(bc250_cs_pass_burst_snapshot PRIVATE
+  PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+  PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+  PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
+target_link_libraries(bc250_cs_pass_burst_snapshot pico_stdlib pico_multicore
+  hardware_pio hardware_dma hardware_clocks hardware_vreg hardware_watchdog)
+pico_enable_stdio_usb(bc250_cs_pass_burst_snapshot 1)
+pico_enable_stdio_uart(bc250_cs_pass_burst_snapshot 0)
+pico_set_program_name(bc250_cs_pass_burst_snapshot "BC250 UEFI SPI pass-through burst snapshot")
+pico_set_program_version(bc250_cs_pass_burst_snapshot "0.1-ram")
+pico_add_extra_outputs(bc250_cs_pass_burst_snapshot)
+
+# RAM-only exact-original one-burst active control. Default path still relays
+# the original flash; only one verified 64-byte READ03 is served by Pico.
+add_executable(bc250_burst_original_control burst_original_control.c)
+pico_set_binary_type(bc250_burst_original_control no_flash)
+pico_generate_pio_header(bc250_burst_original_control ${CMAKE_CURRENT_LIST_DIR}/burst_select_od.pio)
+pico_generate_pio_header(bc250_burst_original_control ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+target_compile_options(bc250_burst_original_control PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(bc250_burst_original_control PRIVATE
+  PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+  PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+  PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
+target_link_libraries(bc250_burst_original_control pico_stdlib pico_multicore
+  hardware_pio hardware_dma hardware_clocks hardware_vreg hardware_watchdog)
+pico_enable_stdio_usb(bc250_burst_original_control 1)
+pico_enable_stdio_uart(bc250_burst_original_control 0)
+pico_set_program_name(bc250_burst_original_control "BC250 exact-original SPI burst control")
+pico_set_program_version(bc250_burst_original_control "0.1-ram")
+pico_add_extra_outputs(bc250_burst_original_control)
+
+# RAM-only exact-original 64-byte control selected by the target address,
+# independent of whether an intervening 0xae00c0 read appears.
+add_executable(bc250_burst_match_control burst_match_control.c)
+pico_set_binary_type(bc250_burst_match_control no_flash)
+pico_generate_pio_header(bc250_burst_match_control ${CMAKE_CURRENT_LIST_DIR}/burst_match_late_od.pio)
+pico_generate_pio_header(bc250_burst_match_control ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+target_compile_options(bc250_burst_match_control PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(bc250_burst_match_control PRIVATE
+  PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+  PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+  PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
+target_link_libraries(bc250_burst_match_control pico_stdlib pico_multicore
+    hardware_clocks hardware_dma hardware_pio hardware_vreg hardware_watchdog)
+pico_enable_stdio_usb(bc250_burst_match_control 1)
+pico_enable_stdio_uart(bc250_burst_match_control 0)
+pico_set_program_name(bc250_burst_match_control "BC250 exact-original SPI address-match burst control")
+pico_set_program_version(bc250_burst_match_control "0.1-ram")
+pico_add_extra_outputs(bc250_burst_match_control)
+
+# RAM-only, no-extra-wire benchmark of 64-byte DMA replies directly from the
+# Pico's existing QSPI flash contents. The BC250 CS# relay remains on PIO0;
+# the local SPI1 master/reply/capture use only otherwise-unwired GP8..GP12.
+add_executable(bc250_burst_xip_bench burst_xip_bench.c)
+pico_set_binary_type(bc250_burst_xip_bench no_flash)
+pico_generate_pio_header(bc250_burst_xip_bench ${CMAKE_CURRENT_LIST_DIR}/cs_open_drain.pio)
+pico_generate_pio_header(bc250_burst_xip_bench ${CMAKE_CURRENT_LIST_DIR}/burst_xip_bench.pio)
+pico_generate_pio_header(bc250_burst_xip_bench ${CMAKE_CURRENT_LIST_DIR}/burst_xip_capture.pio)
+target_compile_options(bc250_burst_xip_bench PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(bc250_burst_xip_bench PRIVATE
+  PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+  PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+  PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
+target_link_libraries(bc250_burst_xip_bench pico_stdlib
+  hardware_clocks hardware_dma hardware_flash hardware_pio hardware_spi hardware_vreg)
+pico_enable_stdio_usb(bc250_burst_xip_bench 1)
+pico_enable_stdio_uart(bc250_burst_xip_bench 0)
+pico_set_program_name(bc250_burst_xip_bench "BC250 Pico onboard-flash XIP SPI self-benchmark")
+pico_set_program_version(bc250_burst_xip_bench "0.1-ram")
+pico_add_extra_outputs(bc250_burst_xip_bench)
+
+# RAM-only, input-only timing capture of the host-CS# high gaps during the
+# first long UEFI burst pass. GP7 still relays the original flash CS#.
+add_executable(bc250_cs_gap_timing cs_gap_timing.c)
+pico_set_binary_type(bc250_cs_gap_timing no_flash)
+pico_generate_pio_header(bc250_cs_gap_timing ${CMAKE_CURRENT_LIST_DIR}/cs_open_drain.pio)
+pico_generate_pio_header(bc250_cs_gap_timing ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+pico_generate_pio_header(bc250_cs_gap_timing ${CMAKE_CURRENT_LIST_DIR}/cs_gap_counter.pio)
+target_compile_options(bc250_cs_gap_timing PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(bc250_cs_gap_timing PRIVATE
+  PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+  PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+  PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
+target_link_libraries(bc250_cs_gap_timing pico_stdlib pico_multicore
+  hardware_clocks hardware_dma hardware_pio hardware_vreg)
+pico_enable_stdio_usb(bc250_cs_gap_timing 1)
+pico_enable_stdio_uart(bc250_cs_gap_timing 0)
+pico_set_program_name(bc250_cs_gap_timing "BC250 passive first-UEFI-pass SPI gap timing")
+pico_set_program_version(bc250_cs_gap_timing "0.1-ram")
+pico_add_extra_outputs(bc250_cs_gap_timing)
+
+# Same input-only gap counter, bounded to the first 48 four-byte header
+# scan. It establishes the deadline for rearming between changed words.
+add_executable(bc250_cs_short_gap_timing cs_gap_timing.c)
+pico_set_binary_type(bc250_cs_short_gap_timing no_flash)
+pico_generate_pio_header(bc250_cs_short_gap_timing ${CMAKE_CURRENT_LIST_DIR}/cs_open_drain.pio)
+pico_generate_pio_header(bc250_cs_short_gap_timing ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+pico_generate_pio_header(bc250_cs_short_gap_timing ${CMAKE_CURRENT_LIST_DIR}/cs_gap_counter.pio)
+target_compile_options(bc250_cs_short_gap_timing PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(bc250_cs_short_gap_timing PRIVATE
+  BC250_SHORT_SCAN_GAP=1
+  PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+  PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+  PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
+target_link_libraries(bc250_cs_short_gap_timing pico_stdlib pico_multicore
+  hardware_pio hardware_dma hardware_clocks hardware_vreg hardware_watchdog)
+pico_enable_stdio_usb(bc250_cs_short_gap_timing 1)
+pico_enable_stdio_uart(bc250_cs_short_gap_timing 0)
+pico_set_program_name(bc250_cs_short_gap_timing "BC250 passive 4-byte SPI scan gap timing")
+pico_set_program_version(bc250_cs_short_gap_timing "0.1-ram")
+pico_add_extra_outputs(bc250_cs_short_gap_timing)
+
+# RAM-only exact-original three-word handoff in the early four-byte scan.
+# One 32-instruction PIO program advances without a CPU rearm in the short
+# gap, then uses a permanent PASS sentinel for all later reads.
+add_executable(bc250_short_scan_original_control short_scan_original_control.c)
+pico_set_binary_type(bc250_short_scan_original_control no_flash)
+pico_generate_pio_header(bc250_short_scan_original_control ${CMAKE_CURRENT_LIST_DIR}/short_scan_sequence_od.pio)
+pico_generate_pio_header(bc250_short_scan_original_control ${CMAKE_CURRENT_LIST_DIR}/address_hunt.pio)
+target_compile_options(bc250_short_scan_original_control PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(bc250_short_scan_original_control PRIVATE
+  PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+  PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+  PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
+target_link_libraries(bc250_short_scan_original_control pico_stdlib pico_multicore
+  hardware_pio hardware_clocks hardware_vreg hardware_watchdog)
+pico_enable_stdio_usb(bc250_short_scan_original_control 1)
+pico_enable_stdio_uart(bc250_short_scan_original_control 0)
+pico_set_program_name(bc250_short_scan_original_control "BC250 exact-original 4-byte SPI scan control")
+pico_set_program_version(bc250_short_scan_original_control "0.1-ram")
+pico_add_extra_outputs(bc250_short_scan_original_control)
+
+# RAM-only, on-chip 34 MHz repeated-read exercise at the measured ~1.08 us
+# CS# gap. It keeps PIO0's real GP7 CS# relay and drives only unwired pins.
+add_executable(bc250_burst_rearm_bench burst_rearm_bench.c)
+pico_set_binary_type(bc250_burst_rearm_bench no_flash)
+pico_generate_pio_header(bc250_burst_rearm_bench ${CMAKE_CURRENT_LIST_DIR}/cs_open_drain.pio)
+pico_generate_pio_header(bc250_burst_rearm_bench ${CMAKE_CURRENT_LIST_DIR}/burst_xip_bench.pio)
+pico_generate_pio_header(bc250_burst_rearm_bench ${CMAKE_CURRENT_LIST_DIR}/burst_host_loop.pio)
+pico_generate_pio_header(bc250_burst_rearm_bench ${CMAKE_CURRENT_LIST_DIR}/burst_xip_capture.pio)
+pico_generate_pio_header(bc250_burst_rearm_bench ${CMAKE_CURRENT_LIST_DIR}/local_gap_counter.pio)
+target_compile_options(bc250_burst_rearm_bench PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(bc250_burst_rearm_bench PRIVATE
+  PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+  PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+  PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
+target_link_libraries(bc250_burst_rearm_bench pico_stdlib pico_multicore
+  pico_sha256 hardware_clocks hardware_dma hardware_flash hardware_pio hardware_vreg)
+pico_enable_stdio_usb(bc250_burst_rearm_bench 1)
+pico_enable_stdio_uart(bc250_burst_rearm_bench 0)
+pico_set_program_name(bc250_burst_rearm_bench "BC250 Pico-only 34MHz repeated-burst rearm benchmark")
+pico_set_program_version(bc250_burst_rearm_bench "0.1-ram")
+pico_add_extra_outputs(bc250_burst_rearm_bench)
+
+set(BC250_ORIGINAL_SEQUENCE_HEADER "" CACHE FILEPATH
+  "Ignored 16-burst header generated from the pinned working ROM")
+if(BC250_ORIGINAL_SEQUENCE_HEADER)
+  if(NOT EXISTS "${BC250_ORIGINAL_SEQUENCE_HEADER}")
+    message(FATAL_ERROR "BC250_ORIGINAL_SEQUENCE_HEADER does not exist")
+  endif()
+  get_filename_component(BC250_ORIGINAL_SEQUENCE_DIR
+    "${BC250_ORIGINAL_SEQUENCE_HEADER}" DIRECTORY)
+  add_executable(bc250_burst_sequence_control burst_sequence_control.c)
+  pico_set_binary_type(bc250_burst_sequence_control no_flash)
+  pico_generate_pio_header(bc250_burst_sequence_control
+    ${CMAKE_CURRENT_LIST_DIR}/burst_match_late_od.pio)
+  target_include_directories(bc250_burst_sequence_control PRIVATE
+    "${BC250_ORIGINAL_SEQUENCE_DIR}")
+  target_compile_options(bc250_burst_sequence_control PRIVATE -Wall -Wextra -Werror)
+  target_compile_definitions(bc250_burst_sequence_control PRIVATE
+    PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+    PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+    PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
+  target_link_libraries(bc250_burst_sequence_control pico_stdlib pico_multicore
+    hardware_clocks hardware_dma hardware_pio hardware_vreg hardware_watchdog)
+  pico_enable_stdio_usb(bc250_burst_sequence_control 1)
+  pico_enable_stdio_uart(bc250_burst_sequence_control 0)
+  pico_set_program_name(bc250_burst_sequence_control
+    "BC250 exact-original 16x64B RAM-only SPI sequence control")
+  pico_set_program_version(bc250_burst_sequence_control "0.1-ram")
+  pico_add_extra_outputs(bc250_burst_sequence_control)
+endif()
+
+set(BC250_DF_LOCK_PAYLOAD_HEADER "" CACHE FILEPATH
+  "Ignored equal-length candidate first-word header; offline research target")
+if(BC250_DF_LOCK_PAYLOAD_HEADER)
+  if(NOT EXISTS "${BC250_DF_LOCK_PAYLOAD_HEADER}")
+    message(FATAL_ERROR "BC250_DF_LOCK_PAYLOAD_HEADER does not exist")
+  endif()
+  get_filename_component(BC250_DF_LOCK_PAYLOAD_DIR
+    "${BC250_DF_LOCK_PAYLOAD_HEADER}" DIRECTORY)
+  add_executable(bc250_df_lock_stream_control df_lock_stream_control.c)
+  pico_set_binary_type(bc250_df_lock_stream_control no_flash)
+  option(BC250_DF_LOCK_EARLY_RELEASE
+    "Release BIOS flash CS# after 26 matched bits and check six aligned bits" OFF)
+  if(BC250_DF_LOCK_EARLY_RELEASE)
+    pico_generate_pio_header(bc250_df_lock_stream_control
+      ${CMAKE_CURRENT_LIST_DIR}/burst_match_early_od.pio)
+    target_compile_definitions(bc250_df_lock_stream_control PRIVATE
+      DF_LOCK_EARLY_RELEASE=1)
+  else()
+    pico_generate_pio_header(bc250_df_lock_stream_control
+      ${CMAKE_CURRENT_LIST_DIR}/burst_match_late_od.pio)
+  endif()
+  option(BC250_DF_LOCK_WIRE_CAPTURE
+    "Capture the first Pico-driven 64-byte reply input-only on GP5" OFF)
+  if(BC250_DF_LOCK_WIRE_CAPTURE)
+    pico_generate_pio_header(bc250_df_lock_stream_control
+      ${CMAKE_CURRENT_LIST_DIR}/burst_wire_capture.pio)
+    target_compile_definitions(bc250_df_lock_stream_control PRIVATE
+      DF_LOCK_WIRE_CAPTURE=1)
+  endif()
+  target_include_directories(bc250_df_lock_stream_control PRIVATE
+    "${BC250_DF_LOCK_PAYLOAD_DIR}")
+  target_compile_options(bc250_df_lock_stream_control PRIVATE -Wall -Wextra -Werror)
+  target_compile_definitions(bc250_df_lock_stream_control PRIVATE
+    PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+    PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+    PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
+  target_link_libraries(bc250_df_lock_stream_control pico_stdlib pico_multicore
+    pico_sha256 hardware_clocks hardware_dma hardware_flash hardware_pio
+    hardware_vreg hardware_watchdog)
+  pico_enable_stdio_usb(bc250_df_lock_stream_control 1)
+  pico_enable_stdio_uart(bc250_df_lock_stream_control 0)
+  pico_set_program_name(bc250_df_lock_stream_control
+    "BC250 equal-length DF-lock SPI stream control")
+  pico_set_program_version(bc250_df_lock_stream_control "0.1-ram")
+  pico_add_extra_outputs(bc250_df_lock_stream_control)
+
+  add_executable(bc250_df_lock_xip_bench burst_xip_bench.c)
+  pico_set_binary_type(bc250_df_lock_xip_bench no_flash)
+  pico_generate_pio_header(bc250_df_lock_xip_bench
+    ${CMAKE_CURRENT_LIST_DIR}/cs_open_drain.pio)
+  pico_generate_pio_header(bc250_df_lock_xip_bench
+    ${CMAKE_CURRENT_LIST_DIR}/burst_xip_bench.pio)
+  pico_generate_pio_header(bc250_df_lock_xip_bench
+    ${CMAKE_CURRENT_LIST_DIR}/burst_xip_capture.pio)
+  target_include_directories(bc250_df_lock_xip_bench PRIVATE
+    "${BC250_DF_LOCK_PAYLOAD_DIR}")
+  target_compile_options(bc250_df_lock_xip_bench PRIVATE -Wall -Wextra -Werror)
+  target_compile_definitions(bc250_df_lock_xip_bench PRIVATE
+    BC250_XIP_BENCH_PRIVATE=1
+    PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+    PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+    PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1)
+  target_link_libraries(bc250_df_lock_xip_bench pico_stdlib
+    hardware_clocks hardware_dma hardware_flash hardware_pio hardware_spi hardware_vreg)
+  pico_enable_stdio_usb(bc250_df_lock_xip_bench 1)
+  pico_enable_stdio_uart(bc250_df_lock_xip_bench 0)
+  pico_set_program_name(bc250_df_lock_xip_bench "BC250 private payload XIP bench")
+  pico_set_program_version(bc250_df_lock_xip_bench "0.1-ram")
+  pico_add_extra_outputs(bc250_df_lock_xip_bench)
+endif()
+
 set(BC250_SPARSE_PROFILE_HEADER "" CACHE FILEPATH
   "Verified physical sparse profile header under private output/; enables dry-run target")
 if(BC250_SPARSE_PROFILE_HEADER)

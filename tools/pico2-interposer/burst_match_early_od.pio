@@ -1,0 +1,46 @@
+; Match the first 26 READ03 address bits, then release the original flash
+; CS# before the six 64-byte-alignment bits. Verify all six are zero before
+; Pico MISO drives the reply. A nonzero tail is a fail-closed IRQ0 fault.
+; GP7 output latch is fixed LOW: PINDIRS=1 sinks CS#, 0 releases it.
+.program burst_match_early_od
+.side_set 1 opt pindirs
+    pull block
+    mov x, osr
+    out null, 32
+.wrap_target
+start:
+    wait 1 gpio 2
+    set pindirs, 0 side 0
+    wait 0 gpio 2
+    set pindirs, 1 side 0
+    mov isr, null
+    set y, 25
+command_bit:
+    wait 1 gpio 3
+    in pins, 1
+    wait 0 gpio 3
+    jmp y-- command_bit
+    mov y, isr
+    jmp x!=y start
+    set pindirs, 0 side 0 [3]
+    set y, 5
+aligned_bit:
+    wait 1 gpio 3
+    jmp pin fault
+    jmp y-- aligned_fall
+    out pins, 1 side 1
+data_bit:
+    wait 0 gpio 3
+    wait 1 gpio 3
+    out pins, 1 side 1
+    jmp !osre data_bit
+    wait 1 gpio 2 side 1
+    irq set 1 side 0
+    mov x, ~null side 0
+    jmp start
+aligned_fall:
+    wait 0 gpio 3
+    jmp aligned_bit
+fault:
+    irq wait 0
+.wrap

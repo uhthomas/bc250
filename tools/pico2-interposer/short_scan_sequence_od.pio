@@ -1,0 +1,49 @@
+; Three exact-original four-byte reads in the early ae0000 header scan.
+; Queue (target>>1, one reply word) three times, then 0xffffffff as a
+; permanent PASS sentinel. The PIO advances at CS# high without core1;
+; after the third reply it uses the original flash for every later read.
+; GP7 is open-drain: latch LOW; PINDIRS=1 sinks, 0 releases.
+.program short_scan_sequence_od
+.side_set 1 opt pindirs
+.wrap_target
+next_target:
+    pull block
+    mov x, osr
+    out null, 32
+start:
+    set pindirs, 0 side 0
+    wait 1 gpio 2
+    wait 0 gpio 2
+    set pindirs, 1 side 0
+    set y, 30
+command_bit:
+    wait 1 gpio 3
+    in pins, 1
+    jmp y-- command_fall
+    mov y, isr
+    jmp x!=y pass
+    set pindirs, 0 side 0 [3]
+    wait 0 gpio 3
+    wait 1 gpio 3
+    jmp pin fault
+    out pins, 1 side 1
+    wait 0 gpio 3
+    ; The preceding OUT has already primed the first of 32 data bits.
+    set y, 30
+data_bit:
+    wait 1 gpio 3
+    wait 0 gpio 3
+    out pins, 1 side 1
+    jmp y-- data_bit
+    wait 1 gpio 2 side 1
+    irq set 1 side 0
+    jmp next_target
+command_fall:
+    wait 0 gpio 3
+    jmp command_bit
+fault:
+    irq wait 0
+pass:
+    wait 1 gpio 2
+    jmp start
+.wrap
