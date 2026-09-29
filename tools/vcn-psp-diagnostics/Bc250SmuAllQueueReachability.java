@@ -28,7 +28,9 @@ public class Bc250SmuAllQueueReachability extends GhidraScript {
         0x2362c, // generic slot clock programming, may power up a domain
         0x23744, // restore a slot's remembered clock
         0x2375c, // slot divider/deep-sleep programming
-        0x24764  // domain-6 shutdown
+        0x24764, // domain-6 shutdown
+        0x24780, // direct VCN slot 0x17 request
+        0x247b4  // direct VCN slot 0x16 request
     };
 
     private static class Edge {

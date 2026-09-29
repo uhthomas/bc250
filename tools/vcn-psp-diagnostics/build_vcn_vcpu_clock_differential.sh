@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Build a guarded VCN ring cache-window write with PSP readback.
+# Build the reset-held VCPU clock-status diagnostic; no flash writes.
 set -euo pipefail
 
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 build=$repo/output/video-decode-20260922/kernel-build
 tree=$build/linux-7.2.5/drivers/gpu/drm/amd/amdgpu
-candidate=$build/vcn-rbc-cache-readback-20260929
+candidate=$build/vcn-vcpu-clock-differential-20260929
 late=$build/late-psp-probe-20260927
 
 test "$(sha256sum "$tree/amdgpu_psp.c" | cut -d' ' -f1)" = \
@@ -16,11 +16,11 @@ test "$(sha256sum "$tree/vcn_v2_0.c" | cut -d' ' -f1)" = \
     e75a0427f18662884b4f8251167bb693608da7f17bfefd2225ee17707738fbef
 test "$(sha256sum "$late/amdgpu_psp.c" | cut -d' ' -f1)" = \
     9d574280fa9f76b6adbec4c3fb971a2c16e9c8614a150b07c8e92759f5a3e62e
-python3 "$repo/tools/vcn-psp-diagnostics/prepare_vcn_rbc_cache_readback_trial.py"
+python3 "$repo/tools/vcn-psp-diagnostics/prepare_vcn_vcpu_clock_differential.py"
 test "$(sha256sum "$candidate/amdgpu_vcn.c" | cut -d' ' -f1)" = \
     67861711fc08ba47eacb594a623b7e250669621ee5587052b90b0074b2af66e8
 test "$(sha256sum "$candidate/vcn_v2_0.c" | cut -d' ' -f1)" = \
-    71c91c8b587c4d3649dca0536893463bef240cb0e97896464c4ef0bf0b3b386e
+    42be01e813a091ec863498cf0aee749f6f8ee95fdab6de66e1f49bae589533b1
 
 backup_psp=$(mktemp "$build/.amdgpu_psp.c.XXXXXX")
 backup_vcn=$(mktemp "$build/.amdgpu_vcn.c.XXXXXX")
@@ -54,8 +54,8 @@ podman --runtime=runc run --rm --network=none --cpus=4 --memory=8g \
         make -C "$headers" M="$tree" \
             KCFLAGS=-I/work/linux-7.2.5/include/trace -j4 modules
         objcopy --strip-debug "$tree/amdgpu.ko" \
-            /work/vcn-rbc-cache-readback-20260929/amdgpu-vcn-rbc-cache-readback.ko
-        test "$(modinfo -F vermagic /work/vcn-rbc-cache-readback-20260929/amdgpu-vcn-rbc-cache-readback.ko | sed "s/[[:space:]]*$//")" = \
+            /work/vcn-vcpu-clock-differential-20260929/amdgpu-vcn-vcpu-clock-differential.ko
+        test "$(modinfo -F vermagic /work/vcn-vcpu-clock-differential-20260929/amdgpu-vcn-vcpu-clock-differential.ko | sed "s/[[:space:]]*$//")" = \
             "7.2.5-200.fc44.x86_64 SMP preempt mod_unload"
     '
-sha256sum "$candidate/amdgpu-vcn-rbc-cache-readback.ko"
+sha256sum "$candidate/amdgpu-vcn-vcpu-clock-differential.ko"

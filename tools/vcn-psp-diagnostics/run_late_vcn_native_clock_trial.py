@@ -2,13 +2,16 @@
 """Pair the native SMU VCN clock with one pinned opt-in decoder startup.
 
 Run only on the isolated diagnostic boot with an armed Pi PDU recovery timer.
-The clock-table generation is never rolled back: cold-cycle outlet 8 after
-collecting the result. No BIOS EEPROM or Pico QSPI flash write is involved.
+The clock-table generation is never rolled back. A second same-boot amdgpu
+probe stalled after the first module was unloaded, even though SMU state was
+retained; start another module only after a cold cycle. No BIOS EEPROM or Pico
+QSPI flash write is involved.
 """
 
 import argparse
 import fcntl
 import hashlib
+import inspect
 import json
 import lzma
 import os
@@ -18,8 +21,8 @@ import subprocess
 import time
 
 from bc250_smu import Bc250Smu
-import trial_smu_clock_walker as clock
 import trial_smu_clock_callback_once as callback
+import trial_smu_clock_walker as clock
 
 ROOT = Path('/var/lib/bc250/validation/video-20260922')
 MODULES = {
@@ -41,6 +44,8 @@ MODULES = {
                           '70aacb396d26ef0651f7d42468a4a413da82cd0cdd400c7d970d02b5dabba580'),
     'psp-bo-fetch': ('amdgpu-vcn-psp-bo-fetch.ko',
                      '7101cd6b9278ea5752051b1d9c06f97f1bb9a61a852cb062fd5eaae1affdd40e'),
+    'vcpu-early-ring-reset': ('amdgpu-vcn-early-ring-reset.ko',
+                              '0f786456e81b669d4d5e7ebe31b8170bea31585691bfec625b3a086a8c0ebc8a'),
     'psp-bo-premap': ('amdgpu-vcn-psp-bo-premap.ko',
                       '26009b01c48f857b8a899bffe60913614befac28d358c71453ae0cc02d17a726'),
     'lmi-latency': ('amdgpu-vcn-lmi-latency.ko',
@@ -73,6 +78,66 @@ MODULES = {
                       'd03d6653104f1b46fc73207bc109b5999807ea5d64a7bbccd5102a7558b5864a'),
     'rbc-cache-readback': ('amdgpu-vcn-rbc-cache-readback.ko',
                            '76042d81e0cddbdf1b4c6333cae97b4bd5b499df850b1a9ad5b5023ae9469e27'),
+    'rbc-reset-oracle': ('amdgpu-vcn-rbc-cache-readback.ko',
+                         '76042d81e0cddbdf1b4c6333cae97b4bd5b499df850b1a9ad5b5023ae9469e27'),
+    'rbc-tmr-reset-oracle': ('amdgpu-vcn-rbc-tmr-reset-oracle.ko',
+                             '6d79e9689b5b9925d4678e3164c969ea774a50d5e721c025513dbcda2352806e'),
+    'rbc-tmr-bar-oracle': ('amdgpu-vcn-rbc-tmr-bar-oracle.ko',
+                           'cb2ec3daa290476ae7366dea0354a7767c4dfd283a96029e48613f2c604239f1'),
+    'vcpu-clock-differential': ('amdgpu-vcn-vcpu-clock-differential.ko',
+                                'f7dd5a406289dfa14d3048752973eede292f332a4d7f92dc1e79cba65f1390fb'),
+    'vcpu-memory-witness': ('amdgpu-vcn-vcpu-memory-witness.ko',
+                            'cc8631cda71a8b993aa2f0471cabbd9bba99e03610ebdb2604d46dba175e790e'),
+    'mmsch-ungate': ('amdgpu-vcn-mmsch-ungate.ko',
+                     '2a91dbe76e9d865cfa5134ecec90c2e5d7d772c0edde81a6da6b037296fcbf37'),
+    'rbc-clock-status-calibration': (
+        'amdgpu-vcn-rbc-clock-status-calibration.ko',
+        'f9221b276480768bbb8997d43e899ea114e470a5dd2dbe535c6bd34d57e3036c'),
+    'fetch-bar-differential': (
+        'amdgpu-vcn-fetch-bar-differential.ko',
+        'e8583a2a9721251c7537d8296b6327ef17c7c627745a7630b02b9398aff06a3f'),
+    'dpg-clock-report': (
+        'amdgpu-vcn-dpg-clock-report.ko',
+        '6be8a126cb6de8cf9d16189bf01dc3adcb3a72eac20bcfb8084e010d857fa85a'),
+    'vcpu-address-fault': (
+        'amdgpu-vcn-vcpu-address-fault.ko',
+        '46ea4d6fde50cbd6a65e46b334d7cda3e63470a2b29c8de051684cd3932324f3'),
+    'vcpu-pif-interrupt': (
+        'amdgpu-vcn-vcpu-pif-interrupt.ko',
+        '5bfb92b6eae67da34c0de94236d9e7502e993e6c1ea71a49bd40e9cf2d6172b7'),
+    'vcpu-report-force': (
+        'amdgpu-vcn-vcpu-report-force.ko',
+        '3c8c9ee98099ce99de1659d96b79283b682bdae07e69f65acc509db45471c60b'),
+    'vcpu-report-handoff': (
+        'amdgpu-vcn-vcpu-report-handoff.ko',
+        '4f9aa48ff185551ed80e233a9f964baec5ed915f9a39e46bd739341295091143'),
+    'rbc-tmr-psp-writer': (
+        'amdgpu-vcn-rbc-tmr-psp-writer.ko',
+        '061fcf2273caa3a24dabc23918b0a65fa0010ec4cdb35a8823d2b25b9102fd66'),
+    'rbc-tmr-psp-writer-stage': (
+        'amdgpu-vcn-rbc-tmr-psp-writer.ko',
+        '061fcf2273caa3a24dabc23918b0a65fa0010ec4cdb35a8823d2b25b9102fd66'),
+    'vcpu-spin-stub': (
+        'amdgpu-vcn-vcpu-spin-stub.ko',
+        'ae3fb016302d7eb08db71543d63c74a5453ccd25b1d2924305425b1c6f894148'),
+    'vcpu-spin-ring-reset': (
+        'amdgpu-vcn-vcpu-spin-ring-reset.ko',
+        '033b59c6704e97a90da399fd7c5038fad81b0d6495af2c12cda9cb4c05daf20f'),
+    'vcpu-marker-stub': (
+        'amdgpu-vcn-vcpu-marker-stub.ko',
+        '0786d82a05b15bafd6c3b850bf7c9a15b711b61792ce4967d31b4c2a08d83986'),
+    'vcpu-early-store': (
+        'amdgpu-vcn-vcpu-early-store.ko',
+        '0656c0f3c95718f22ec83fff601f71a35881e33bba08bd8da84a0cd6cff8cf69'),
+    'vcpu-harvest-try': (
+        'amdgpu-vcn-vcpu-harvest-try.ko',
+        '791b1f75f4b1dea760e52326820becaf082092617d290c814dda85313af01484'),
+    'rbc-perfmon-control': ('amdgpu-vcn-rbc-perfmon-control.ko',
+                            '54eb58b2696dc228df2d1d3de6e8f3f026357f1e61ec08ea078897bff8c68ebd'),
+    'rbc-perfmon-phase': ('amdgpu-vcn-rbc-perfmon-phase.ko',
+                          'de2971abe94fe7fe66dfa794edbf8caeb51712482980e129e9c8ceab3c6a39e2'),
+    'rbc-tmr-perfmon-phase': ('amdgpu-vcn-rbc-perfmon-phase.ko',
+                              'de2971abe94fe7fe66dfa794edbf8caeb51712482980e129e9c8ceab3c6a39e2'),
     'host-vcpu-trace': ('amdgpu-vcn-host-vcpu-trace.ko',
                         '5ae1352f072727d4b162d75def8c2b35e69c935dc698ac8ebbb1166686135334'),
     'arbiter-probe': ('amdgpu-vcn-arbiter-probe.ko',
@@ -100,6 +165,7 @@ MODULES = {
 }
 FIRMWARE_SHA = 'a9ec155695b5020009d3986cfd4ebd00ad9ddbd12ac7e5fa15ec86b8a571dbe5'
 STAGE_SHA = '0cca277fbeecbf71512ae253644af0964458f8324ca34df84934798e01a198dc'
+CALLBACK_SHA = '993a921bd4f59370c9e80e78a79e3aaec5b1287b8c4006da588ac91466a98c82'
 ENTRY_SHA = '9675158c6e976ec9fee3741eac39d4a81e128577e62a5684049a6d5a277d6ef9'
 DEPS = ('drm_display_helper', 'gpu-sched', 'amdxcp', 'ttm', 'cec',
         'drm_suballoc_helper', 'drm_exec', 'video', 'drm_ttm_helper',
@@ -121,7 +187,7 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def guarded_power_up(smu, emit):
+def guarded_power_up(smu, emit, expected_clock_code, vclk_mhz):
     """Reapply only controls already exercised in earlier volatile trials."""
     require([clock.smn(smu, address) for address in ENABLES] == [0, 0, 0]
             and clock.smn(smu, CONTROL) == 2,
@@ -151,13 +217,83 @@ def guarded_power_up(smu, emit):
             require(time.monotonic() < deadline,
                     'domain-6 power acknowledgement timed out')
             time.sleep(0.01)
-    require(clock.smn(smu, clock.CLOCK_SMN) == 16 and
+    require(clock.smn(smu, clock.CLOCK_SMN) == expected_clock_code and
             [clock.smn(smu, address) for address in ENABLES] == [1, 1, 1] and
             clock.smn(smu, CONTROL) == 0,
             'clock/gate state changed before decoder startup')
-    emit('native_clock_and_gates_ready', {'clock_code': 16,
+    emit('native_clock_and_gates_ready', {'clock_code': expected_clock_code,
+                                           'requested_vclk_mhz': vclk_mhz,
                                            'slot_enables': [1, 1, 1],
                                            'domain_gate': 0})
+
+
+def guarded_domain6_cycle(smu, emit, expected_clock_code):
+    """Exercise the pinned SMU domain-6 down/up register sequence once.
+
+    The native VCLK request above occurs while the SMU already records
+    domain 6 as powered. This tests whether a real power transition is
+    needed to propagate that clock to VCN. The recovery PDU timer is armed
+    by the caller, and any failed readback aborts before loading amdgpu.
+    """
+    require(clock.word(smu, 0xf714) == 0x10101 and
+            clock.smn(smu, POWER_STATUS) == 0x01010101 and
+            clock.smn(smu, POWER_COMMAND) == 0 and
+            clock.smn(smu, POWER_RAIL) == 0 and
+            clock.smn(smu, CONTROL) == 0 and
+            [clock.smn(smu, address) for address in ENABLES] == [1, 1, 1] and
+            clock.smn(smu, clock.CLOCK_SMN) == expected_clock_code,
+            'domain-6 cycle baseline differs')
+
+    def write_and_poll(address, value, poll_address, mask, expected, phase):
+        emit('domain6_cycle_write_intent', {'phase': phase,
+                                            'address': hex(WIN + address),
+                                            'value': hex(value)})
+        smu.smu_write32(WIN + address, value)
+        deadline = time.monotonic() + 0.5
+        while True:
+            observed = clock.smn(smu, poll_address)
+            if observed & mask == expected:
+                emit('domain6_cycle_readback', {'phase': phase,
+                                                 'address': hex(poll_address),
+                                                 'value': hex(observed)})
+                return observed
+            require(time.monotonic() < deadline,
+                    f'domain-6 {phase} acknowledgement timed out: '
+                    f'{observed:#x}')
+            time.sleep(0.01)
+
+    # FUN_00024764 gates slots 0x16, 0x17 and 0x18 before calling
+    # FUN_00023b14(6, 0). Their domain-control bits are 0, 1 and 2.
+    write_and_poll(CONTROL, 0x7, CONTROL, 0x7, 0x7, 'close-slot-gates')
+    # FUN_00023b14(6, 0): rail <- 1, then command <- 0x10.
+    write_and_poll(POWER_RAIL, 1, POWER_RAIL, 1, 0, 'rail-down')
+    down = write_and_poll(POWER_COMMAND, 0x10, POWER_STATUS,
+                          0x1000, 0x1000, 'domain-down')
+    require(down != 0x01010101,
+            'domain-6 down command produced no status transition')
+    # FUN_00023b14(6, 1): command <- 1, then rail <- 0x10000.
+    up = write_and_poll(POWER_COMMAND, 1, POWER_STATUS,
+                        0x100, 0x100, 'domain-up')
+    write_and_poll(POWER_RAIL, 0x10000, POWER_RAIL,
+                   0x10000, 0, 'rail-up')
+    write_and_poll(CONTROL, 0, CONTROL, 0x7, 0, 'open-slot-gates')
+    final = {'power_status': clock.smn(smu, POWER_STATUS),
+             'power_command': clock.smn(smu, POWER_COMMAND),
+             'power_rail': clock.smn(smu, POWER_RAIL),
+             'domain_gate': clock.smn(smu, CONTROL),
+             'slot_enables': [clock.smn(smu, address) for address in ENABLES],
+             'clock_code': clock.smn(smu, clock.CLOCK_SMN),
+             'smu_domain_state': clock.word(smu, 0xf714)}
+    require(final['power_status'] & 0x100 == 0x100 and
+            final['power_command'] == 0 and
+            final['power_rail'] == 0 and
+            final['domain_gate'] == 0 and
+            final['slot_enables'] == [1, 1, 1] and
+            final['clock_code'] == expected_clock_code and
+            final['smu_domain_state'] == 0x10101,
+            f'domain-6 cycle did not restore guarded state: {final}')
+    emit('domain6_cycle_complete', {'down_status': hex(down),
+                                    'up_status': hex(up), **final})
 
 
 def preflight(expected_boot_id, module_kind):
@@ -190,6 +326,12 @@ def preflight(expected_boot_id, module_kind):
     require(sha(stage) == STAGE_SHA and
             sha(ROOT/'kernel/psp-test-custom.cfg') == ENTRY_SHA,
             'diagnostic recovery entry changed')
+    callback_path = ROOT/'kernel/trial_smu_clock_callback_once.py'
+    require(Path(callback.__file__).resolve() == callback_path and
+            sha(callback_path) == CALLBACK_SHA and
+            getattr(callback, 'SUPPORTED_VCLKS', None) == (800, 1250) and
+            'vclk_mhz' in inspect.signature(callback.callback_once).parameters,
+            'SMU callback import or source differs from the reviewed 800 MHz trial')
     require(sha(clock.SOURCE) == clock.SOURCE_SHA,
             'captured SMU image changed')
     return stage, module, expected_sha
@@ -201,6 +343,9 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--module-kind', choices=tuple(MODULES),
                         default='lmi-oracle')
+    parser.add_argument('--vclk-mhz', type=int, choices=(800, 1250),
+                        default=1250)
+    parser.add_argument('--cycle-domain6-once', action='store_true')
     parser.add_argument('--preflight-only', action='store_true')
     parser.add_argument('--pi-pdu-timer-active', action='store_true')
     args = parser.parse_args()
@@ -224,6 +369,7 @@ def main():
                     'periodic callback differs')
             print(json.dumps({'preflight_only': True,
                               'boot_id': args.expected_boot_id,
+                              'requested_vclk_mhz': args.vclk_mhz,
                               'callback_verified': True}))
         finally:
             smu.close()
@@ -245,6 +391,8 @@ def main():
                        'firmware_sha256': FIRMWARE_SHA,
                        'source_sha256': clock.SOURCE_SHA,
                        'runner_sha256': sha(Path(__file__)),
+                       'requested_vclk_mhz': args.vclk_mhz,
+                       'cycle_domain6_once': args.cycle_domain6_once,
                        'cold_cycle_required': True})
         for dependency in DEPS:
             subprocess.run(['modprobe', dependency], check=True)
@@ -255,8 +403,13 @@ def main():
             trial = clock.Trial(smu, clock.SOURCE.read_bytes(), emit,
                                 require_gpu_metrics=False)
             trial.preflight()
-            callback.callback_once(trial, emit)
-            guarded_power_up(smu, emit)
+            applied = callback.callback_once(trial, emit,
+                                             vclk_mhz=args.vclk_mhz)
+            guarded_power_up(smu, emit, applied['hardware_code'],
+                             args.vclk_mhz)
+            if args.cycle_domain6_once:
+                guarded_domain6_cycle(smu, emit,
+                                      applied['hardware_code'])
             # SETUP_TMR may hang the diagnostic driver, so pre-arm recovery.
             subprocess.run(['unshare', '--mount', '--propagation', 'private',
                             'bash', str(stage)], check=True, timeout=15)
@@ -265,6 +418,8 @@ def main():
                     and sha(Path('/boot/grub2/custom.cfg')) == ENTRY_SHA,
                     'diagnostic recovery entry not armed')
             emit('recovery_entry_staged', {'sha256': ENTRY_SHA})
+            kernel_before = subprocess.check_output(
+                ['dmesg', '--color=never'], text=True).splitlines()
             emit('insmod_intent', {'module': str(module), 'bc250_vcn': 1})
             result = subprocess.run(['insmod', str(module), 'bc250_vcn=1',
                                      'bc250_vcn_psp_probe=0'],
@@ -272,8 +427,11 @@ def main():
             emit('insmod_return', {'returncode': result.returncode,
                                   'stdout': result.stdout[-2000:],
                                   'stderr': result.stderr[-2000:]})
-            kernel_lines = subprocess.check_output(
+            kernel_all = subprocess.check_output(
                 ['dmesg', '--color=never'], text=True).splitlines()
+            require(kernel_all[:len(kernel_before)] == kernel_before,
+                    'kernel log rotated during diagnostic trial')
+            kernel_lines = kernel_all[len(kernel_before):]
             rows = [line for line in kernel_lines
                 if any(mark in line.lower() for mark in
                        ('amdgpu', 'vcn', 'uvd', 'psp', 'setup_tmr'))][-160:]
@@ -281,6 +439,133 @@ def main():
             trace = [line for line in kernel_lines
                      if 'BC250 VCN' in line or 'BC250 MMSCH' in line]
             emit('vcn_register_trace', trace)
+            if args.module_kind in ('vcpu-spin-stub',
+                                    'vcpu-spin-ring-reset'):
+                spin = [line for line in kernel_lines
+                        if 'BC250 VCPU spin BO:' in line]
+                require(len(spin) == 1, 'missing or duplicate VCPU spin BO report')
+                match = re.search(
+                    r'file=([0-9a-f]{4}) buffer=([0-9a-f]{4}) '
+                    r'bytes=([0-9a-f]{6})', spin[0])
+                require(match is not None and match.groups() ==
+                        ('f308', 'f208', '06ffff'),
+                        'VCPU spin BO bytes or location differ')
+                samples = [line for line in trace
+                           if 'BC250 VCN VCPU release:' in line or
+                           'BC250 VCN VCPU wait0:' in line]
+                emit('vcn_vcpu_spin_stub', {
+                    'bo_readback': match[3],
+                    'file_offset': match[1],
+                    'buffer_offset': match[2],
+                    'vcpu_samples': samples,
+                    'interpretation_limit':
+                        'A flat PC cannot distinguish reset, wrong entry point or blocked instruction fetch.',
+                })
+            if args.module_kind == 'vcpu-marker-stub':
+                program_rows = [line for line in kernel_lines
+                                if 'BC250 VCPU marker BO:' in line]
+                before_rows = [line for line in kernel_lines
+                               if 'BC250 VCPU marker before:' in line]
+                after_rows = [line for line in kernel_lines
+                              if 'BC250 VCPU marker after:' in line]
+                wait_rows = [line for line in kernel_lines
+                             if 'BC250 VCPU marker wait0:' in line]
+                require(len(program_rows) == len(before_rows) ==
+                        len(after_rows) == len(wait_rows) == 1,
+                        'missing or duplicate VCPU marker witness')
+                program = re.search(
+                    r'code=f208 bytes=([0-9a-f]{24}) '
+                    r'address=([0-9a-f]{8}) value=([0-9a-f]{8})',
+                    program_rows[0])
+                before = re.search(r'value=([0-9a-f]{8})', before_rows[0])
+                after = re.search(
+                    r'value=([0-9a-f]{8}) before=([0-9a-f]{8}) '
+                    r'pc=([0-9a-f]{8})', after_rows[0])
+                wait = re.search(r'value=([0-9a-f]{8})', wait_rows[0])
+                require(program is not None and before is not None and
+                        after is not None and wait is not None and
+                        program.groups() ==
+                        ('21fefb31fefb32620006ffff', '6100ffd0',
+                         '7bc25001') and
+                        before[1] == after[2] == '00000000',
+                        'VCPU marker program, address or initial state differs')
+                emit('vcn_vcpu_marker_stub', {
+                    'program': program[1],
+                    'target': '0x' + program[2],
+                    'marker': '0x' + program[3],
+                    'before': '0x' + before[1],
+                    'after': '0x' + after[1],
+                    'wait0': '0x' + wait[1],
+                    'pc_trace': '0x' + after[3],
+                    'marker_observed': program[3] in (after[1], wait[1]),
+                    'early_boot_store_observed':
+                        '61010010' in (after[1], wait[1]),
+                    'interpretation_limit':
+                        'If both expected stores are absent, no fetch and a wrong stack mapping remain possible; the later custom program entry is not proven.',
+                })
+            if args.module_kind in ('vcpu-early-store',
+                                    'vcpu-harvest-try'):
+                program_rows = [line for line in kernel_lines
+                                if 'BC250 VCPU early BO:' in line]
+                before_rows = [line for line in kernel_lines
+                               if 'BC250 VCPU early before:' in line]
+                after_rows = [line for line in kernel_lines
+                              if 'BC250 VCPU early after:' in line]
+                wait_rows = [line for line in kernel_lines
+                             if 'BC250 VCPU early wait0:' in line]
+                require(len(program_rows) == len(before_rows) ==
+                        len(after_rows) == len(wait_rows) == 1,
+                        'missing or duplicate VCPU early-store witness')
+                program = re.search(
+                    r'store=454 next=456 bytes=([0-9a-f]{6}) '
+                    r'literal=124 value=([0-9a-f]{8}) target=([0-9a-f]{8})',
+                    program_rows[0])
+                before = re.search(r'value=([0-9a-f]{8})', before_rows[0])
+                after = re.search(
+                    r'value=([0-9a-f]{8}) before=([0-9a-f]{8}) '
+                    r'pc=([0-9a-f]{8})', after_rows[0])
+                wait = re.search(r'value=([0-9a-f]{8})', wait_rows[0])
+                require(program is not None and before is not None and
+                        after is not None and wait is not None and
+                        program.groups() ==
+                        ('06ffff', '0250c27b', '6100ffd0') and
+                        before[1] == after[2] == '00000000',
+                        'VCPU early program, target or initial state differs')
+                emit('vcn_vcpu_early_store', {
+                    'self_loop': program[1],
+                    'literal_le': program[2],
+                    'target': '0x' + program[3],
+                    'before': '0x' + before[1],
+                    'after': '0x' + after[1],
+                    'wait0': '0x' + wait[1],
+                    'pc_trace': '0x' + after[3],
+                    'marker_observed':
+                        '7bc25002' in (after[1], wait[1]),
+                    'interpretation_limit':
+                        'A marker proves the early store executed if the stack mapping is correct. Absence cannot distinguish a stalled VCPU from a wrong host mapping or a reset-vector path that bypasses this code.',
+                })
+                if args.module_kind == 'vcpu-harvest-try':
+                    harvest_rows = [line for line in kernel_lines
+                                    if 'BC250 VCPU harvest trial:' in line]
+                    require(len(harvest_rows) == 1,
+                            'missing or duplicate VCPU harvest readback')
+                    harvest = re.search(
+                        r'before=([0-9a-f]{8}) after=([0-9a-f]{8}) '
+                        r'version=([0-9a-f]{8})', harvest_rows[0])
+                    require(harvest is not None and
+                            harvest[1] == '00000003' and
+                            harvest[3] == '0002001b',
+                            'VCN harvest guard or powered version changed')
+                    emit('vcn_vcpu_harvest_try', {
+                        'before': '0x' + harvest[1],
+                        'after': '0x' + harvest[2],
+                        'version': '0x' + harvest[3],
+                        'clear_latched': harvest[2] == '00000000',
+                        'marker_observed':
+                            '7bc25002' in (after[1], wait[1]),
+                        'interpretation_limit':
+                            'A refused volatile write does not establish whether the disable indication originates from a physical fuse or an earlier policy latch.',
+                    })
             if args.module_kind == 'host-vcpu-trace':
                 armed = [line for line in trace
                          if 'BC250 VCN host trace armed:' in line]
@@ -395,7 +680,8 @@ def main():
                         direct_result['power'] == 0x800 and
                         direct_result['pgfsm'] == 0,
                         'direct BO state differs from pinned powered baseline')
-            if args.module_kind in ('psp-bo-fetch', 'psp-bo-premap',
+            if args.module_kind in ('psp-bo-fetch', 'vcpu-early-ring-reset',
+                                    'psp-bo-premap',
                                     'lmi-latency', 'arbiter-probe',
                                     'clock-gate-probe', 'memory-requests',
                                     'lmi-perfmon', 'mmsch-mode', 'rbc-fetch',
@@ -430,6 +716,29 @@ def main():
                     'powered_psp_reload': reload_result,
                     'vcpu_ready': any('status=00000002' in line
                                       for line in trace if 'trace wait[' in line),
+                })
+            if args.module_kind == 'vcpu-early-ring-reset':
+                rows = [line for line in trace
+                        if 'BC250 VCN early ring reset:' in line]
+                require(len(rows) == 1,
+                        'missing or duplicate early reset-ring result')
+                match = re.search(
+                    r'first=([0-9a-f]{8})/([0-9a-f]{8}) '
+                    r'second=([0-9a-f]{8})/([0-9a-f]{8}) '
+                    r'dpg=([0-9a-f]{8}) status=([0-9a-f]{8}) '
+                    r'prid=([0-9a-f]{8}) pc=([0-9a-f]{8})', rows[0])
+                require(match is not None, 'malformed early reset-ring result')
+                values = [int(value, 16) for value in match.groups()]
+                require(values[:4] == [16, 0x11112222, 32, 0x33334444],
+                        'early reset hold/release packets were not executed')
+                emit('vcpu_early_ring_reset', {
+                    'hold_packet_executed': True,
+                    'release_packet_executed': True,
+                    'dpg_clock_report': hex(values[4]),
+                    'uvd_status': hex(values[5]),
+                    'vcpu_ready_at_release': bool(values[5] & 2),
+                    'vcpu_prid': hex(values[6]),
+                    'vcpu_pc_trace': hex(values[7]),
                 })
             if args.module_kind == 'arbiter-probe':
                 snapshots = {}
@@ -887,7 +1196,11 @@ def main():
                     'host_restore_used': any(
                         f'{prefix} host restore:' in line for line in trace),
                 })
-            if args.module_kind in ('rbc-vcpu-reset-mapped', 'rbc-cache-map'):
+            if args.module_kind in ('rbc-vcpu-reset-mapped',
+                                    'vcpu-spin-ring-reset',
+                                    'vcpu-marker-stub',
+                                    'vcpu-early-store',
+                                    'vcpu-harvest-try', 'rbc-cache-map'):
                 prefix = ('BC250 VCN RBC cache map'
                           if args.module_kind == 'rbc-cache-map'
                           else 'BC250 VCN RBC VCPU mapped reset')
@@ -966,7 +1279,18 @@ def main():
                     'host_clock_restore_used': any(
                         f'{prefix} host restore:' in line for line in trace),
                 })
-            if args.module_kind == 'rbc-cache-readback':
+            if args.module_kind in ('rbc-cache-readback',
+                                    'rbc-reset-oracle',
+                                    'rbc-tmr-reset-oracle',
+                                    'rbc-tmr-bar-oracle',
+                                    'vcpu-clock-differential',
+                                    'vcpu-memory-witness',
+                                    'mmsch-ungate',
+                                    'rbc-clock-status-calibration',
+                                    'fetch-bar-differential',
+                                    'dpg-clock-report',
+                                    'vcpu-address-fault',
+                                    'vcpu-pif-interrupt'):
                 prefix = 'BC250 VCN RBC cache oracle '
 
                 def oracle_row(label, pattern):
@@ -986,6 +1310,14 @@ def main():
                     'second',
                     r'rptr=([0-9a-f]{8}) scratch=([0-9a-f]{8}) '
                     r'status=([0-9a-f]{8})')
+                third = third_count = None
+                if args.module_kind in ('fetch-bar-differential',
+                                        'vcpu-address-fault',
+                                        'vcpu-pif-interrupt'):
+                    third, third_count = oracle_row(
+                        'third',
+                        r'rptr=([0-9a-f]{8}) scratch=([0-9a-f]{8}) '
+                        r'status=([0-9a-f]{8})')
                 sentinel, sentinel_count = oracle_row(
                     'sentinel',
                     r'ret=(-?\d+) psp=([0-9a-f]{8}) '
@@ -1000,16 +1332,69 @@ def main():
                     'signed replay', r'ret=(-?\d+) psp=([0-9a-f]{8})')
                 require(int(first[0], 16) == int(sentinel[3], 16) == 16 and
                         int(first[1], 16) == int(sentinel[4], 16) ==
-                        0x11112222 and
-                        int(second[0], 16) == int(restored[3], 16) == 32 and
-                        int(second[1], 16) == int(restored[4], 16) ==
-                        0x33334444,
-                        'ring markers or read pointers changed during PSP reads')
-                emit('vcn_rbc_cache_readback', {
+                        0x11112222,
+                        'first ring marker changed during PSP read')
+                if args.module_kind in ('fetch-bar-differential',
+                                        'vcpu-address-fault',
+                                        'vcpu-pif-interrupt'):
+                    require(int(second[0], 16) == 32 and
+                            int(second[1], 16) == 0x22223333 and
+                            int(third[0], 16) == int(restored[3], 16) == 48 and
+                            int(third[1], 16) == int(restored[4], 16) ==
+                            0x33334444,
+                            'fetch differential ring markers changed')
+                else:
+                    require(int(second[0], 16) == int(restored[3], 16) == 32 and
+                            int(second[1], 16) == int(restored[4], 16) ==
+                            0x33334444,
+                            'ring markers changed during PSP read')
+                reset_oracle = args.module_kind in ('rbc-reset-oracle',
+                                                    'rbc-tmr-reset-oracle',
+                                                    'rbc-tmr-bar-oracle',
+                                                    'vcpu-clock-differential',
+                                                    'vcpu-memory-witness',
+                                                    'mmsch-ungate',
+                                                    'rbc-clock-status-calibration',
+                                                    'fetch-bar-differential',
+                                                    'dpg-clock-report',
+                                                    'vcpu-address-fault',
+                                                    'vcpu-pif-interrupt')
+                bar_oracle = args.module_kind in ('rbc-tmr-bar-oracle',
+                                                  'vcpu-clock-differential',
+                                                  'vcpu-memory-witness',
+                                                  'mmsch-ungate',
+                                                  'rbc-clock-status-calibration',
+                                                  'fetch-bar-differential',
+                                                  'dpg-clock-report',
+                                                  'vcpu-address-fault',
+                                                  'vcpu-pif-interrupt')
+                expected_sentinel = (0x71080000 if args.module_kind in
+                                     ('vcpu-address-fault', 'vcpu-pif-interrupt')
+                                     else 0x71010000
+                                     if bar_oracle else 0x71363000)
+                event = ('vcn_rbc_tmr_bar_oracle' if bar_oracle else
+                         'vcn_rbc_tmr_reset_oracle' if args.module_kind ==
+                         'rbc-tmr-reset-oracle' else 'vcn_rbc_reset_oracle'
+                         if reset_oracle else 'vcn_rbc_cache_readback')
+                emit(event, {
                     'sentinel_psp_status': '0x' + sentinel[1],
-                    'sentinel_observed': int(sentinel[1], 16) == 0x71363000,
+                    'sentinel_observed':
+                        int(sentinel[1], 16) == expected_sentinel,
+                    'expected_sentinel': hex(expected_sentinel),
                     'restored_psp_status': '0x' + restored[1],
-                    'restore_observed': int(restored[1], 16) == 0x70000010,
+                    'restore_observed':
+                        ((int(restored[1], 16) & 0xff000000) == 0x73000000
+                        if reset_oracle else
+                         int(restored[1], 16) == 0x70000010),
+                    'reset_report_valid':
+                        reset_oracle and
+                        (int(restored[1], 16) & 0xff000000) == 0x73000000,
+                    'psp_reset_low24':
+                        (hex(int(restored[1], 16) & 0x00ffffff)
+                         if reset_oracle else None),
+                    'vcpu_reset_and_vclk_status_clear':
+                        (int(restored[1], 16) & 0x00080008) == 0
+                        if reset_oracle else None,
                     'sentinel_request_return': int(sentinel[0]),
                     'restore_request_return': int(restored[0]),
                     'scratch_restored': int(sentinel[2], 16) ==
@@ -1021,6 +1406,455 @@ def main():
                     'report_counts': [first_count, second_count,
                                       sentinel_count, restored_count,
                                       replay_count],
+                })
+                if args.module_kind in ('fetch-bar-differential',
+                                        'vcpu-address-fault',
+                                        'vcpu-pif-interrupt'):
+                    require(third_count == 1, 'missing third ring report')
+                    emit('vcn_fetch_bar_ring_restore', {
+                        'rptr': int(third[0], 16),
+                        'marker': '0x' + third[1],
+                        'status': '0x' + third[2],
+                    })
+                if bar_oracle:
+                    require(int(sentinel[0]) == int(restored[0]) ==
+                            int(replay[0]) == 0 and
+                            int(sentinel[1], 16) == expected_sentinel and
+                            int(restored[1], 16) == 0x73000000 and
+                            int(replay[1], 16) == 0,
+                            'TMR BAR ring shift or restoration not proven')
+            if args.module_kind == 'fetch-bar-differential':
+                fields = ('status0', 'status_or', 'pc_or', 'pf_or',
+                          'status', 'pc', 'pf', 'prid', 'lmi', 'latency')
+                observations = {}
+                for phase in ('displaced', 'restored'):
+                    rows = [line for line in kernel_lines if
+                            f'BC250 VCPU fetch differential {phase}:' in line]
+                    require(len(rows) == 1,
+                            f'missing or duplicate fetch differential {phase}')
+                    values = re.search(
+                        r' '.join(rf'{field}=([0-9a-f]{{8}})'
+                                  for field in fields), rows[0])
+                    require(values is not None,
+                            f'malformed fetch differential {phase}')
+                    observations[phase] = {
+                        field: hex(int(value, 16))
+                        for field, value in zip(fields, values.groups())}
+                emit('vcn_fetch_bar_differential', {
+                    'observations': observations,
+                    'interpretation_limit':
+                        'Equal status and zero trace/fault do not exclude silent fetch of bad instructions.',
+                })
+            if args.module_kind in ('vcpu-address-fault',
+                                    'vcpu-pif-interrupt'):
+                held_rows = [line for line in kernel_lines if
+                             'BC250 VCPU address fault held:' in line]
+                require(len(held_rows) == 1,
+                        'missing or duplicate held VCPU address-error report')
+                held_match = re.search(
+                    r'sys=([0-9a-f]{8}) en=([0-9a-f]{8}) '
+                    r'trce_rd=([0-9a-f]{8})', held_rows[0])
+                require(held_match is not None,
+                        'malformed held VCPU address-error report')
+                held = dict(zip(('sys', 'en', 'trce_rd'),
+                                (int(v, 16) for v in held_match.groups())))
+                fields = ('status0', 'status_or', 'pc_or', 'sys_or',
+                          'status', 'pc', 'sys', 'prid', 'lmi',
+                          'latency', 'trce_rd')
+                observations = {}
+                for phase in ('displaced', 'restored'):
+                    rows = [line for line in kernel_lines if
+                            f'BC250 VCPU address fault {phase}:' in line]
+                    require(len(rows) == 1,
+                            f'missing or duplicate VCPU address-error {phase}')
+                    values = re.search(
+                        r' '.join(rf'{field}=([0-9a-f]{{8}})'
+                                  for field in fields), rows[0])
+                    require(values is not None,
+                            f'malformed VCPU address-error {phase}')
+                    observations[phase] = dict(zip(
+                        fields, (int(v, 16) for v in values.groups())))
+                pif_route = None
+                if args.module_kind == 'vcpu-pif-interrupt':
+                    def pif_row(label, fields):
+                        rows = [line for line in kernel_lines if
+                                f'BC250 VCPU PIF {label}:' in line]
+                        require(len(rows) == 1,
+                                f'missing or duplicate VCPU PIF {label}')
+                        values = re.search(
+                            r' '.join(rf'{field}=([0-9a-f]{{8}})'
+                                      for field in fields), rows[0])
+                        require(values is not None,
+                                f'malformed VCPU PIF {label}')
+                        return dict(zip(fields,
+                                        (int(v, 16) for v in values.groups())))
+
+                    armed = pif_row('armed',
+                                    ('old_sys', 'old_vcpu', 'sys', 'vcpu',
+                                     'master', 'status'))
+                    displaced_en = pif_row('displaced enable',
+                                            ('sys', 'vcpu', 'master'))
+                    restored_en = pif_row('restored enable',
+                                           ('sys', 'vcpu', 'master'))
+                    disarmed = pif_row('disarmed',
+                                       ('sys', 'vcpu', 'status'))
+                    pif_route = {
+                        'armed': {k: hex(v) for k, v in armed.items()},
+                        'displaced_enable': {
+                            k: hex(v) for k, v in displaced_en.items()},
+                        'restored_enable': {
+                            k: hex(v) for k, v in restored_en.items()},
+                        'disarmed': {k: hex(v) for k, v in disarmed.items()},
+                        'both_pif_enables_latched':
+                            bool(armed['sys'] & armed['vcpu'] & 1),
+                        'both_pif_enables_survived_release':
+                            bool(displaced_en['sys'] & displaced_en['vcpu'] & 1),
+                        'original_enables_restored':
+                            (disarmed['sys'] == armed['old_sys'] and
+                             disarmed['vcpu'] == armed['old_vcpu']),
+                    }
+                emit('vcn_vcpu_address_fault', {
+                    'firmware_bar_low_during_test': '0x20080000',
+                    'vr_aperture_end': '0xf41fffffff',
+                    'held': {k: hex(v) for k, v in held.items()},
+                    'observations': {
+                        phase: {k: hex(v) for k, v in values.items()}
+                        for phase, values in observations.items()},
+                    'new_pif_address_error_seen':
+                        bool((observations['displaced']['sys_or'] & 1) and
+                             not ((armed['status'] if pif_route else
+                                   held['sys']) & 1)),
+                    'pif_route': pif_route,
+                    'interpretation_limit':
+                        'PIF_ADDR_ERR_INT is a named address-error bit, but a zero does not exclude silent VCPU fetch failure.',
+                })
+            if args.module_kind in ('vcpu-report-force',
+                                    'vcpu-report-handoff'):
+                handoff = args.module_kind == 'vcpu-report-handoff'
+                rows = [line for line in kernel_lines if
+                        'BC250 VCPU report phase=' in line]
+                require(len(rows) == (5 if handoff else 4),
+                        f'unexpected VCPU report phase count: {len(rows)}')
+                phase_fields = ('phase', 'rptr', 'marker', 'status', 'dpg',
+                                'prid', 'pc', 'lmi')
+                phases = []
+                for row in rows:
+                    match = re.search(
+                        r' '.join(rf'{field}=([0-9a-f]+)'
+                                  for field in phase_fields), row)
+                    require(match is not None, 'malformed VCPU report phase')
+                    values = dict(zip(phase_fields, match.groups()))
+                    phase = int(values['phase'])
+                    require(phase == len(phases), 'VCPU report phase order changed')
+                    require(int(values['rptr'], 16) == (phase + 1) * 16 and
+                            int(values['marker'], 16) == 0x11110000 | phase,
+                            'VCPU report ring packet did not reach marker')
+                    phases.append({
+                        k: int(v) if k == 'phase' else hex(int(v, 16))
+                        for k, v in values.items()})
+                final_rows = [line for line in kernel_lines if
+                              ('BC250 VCPU report handoff:' if handoff else
+                               'BC250 VCPU report final:') in line]
+                require(len(final_rows) == 1,
+                        'missing or duplicate VCPU report restoration')
+                final_fields = ('status', 'dpg', 'prid', 'pc', 'rptr')
+                final_match = re.search(
+                    r' '.join(rf'{field}=([0-9a-f]{{8}})'
+                              for field in final_fields), final_rows[0])
+                require(final_match is not None,
+                        'malformed VCPU report restoration')
+                final = dict(zip(final_fields,
+                                 (int(v, 16) for v in final_match.groups())))
+                require(final['status'] == (2 if handoff else 4),
+                        'unexpected VCPU report final status')
+                downstream = None
+                if handoff:
+                    wait_rows = [line for line in kernel_lines if
+                                 'BC250 VCPU report after wait:' in line]
+                    test_rows = [line for line in kernel_lines if
+                                 'BC250 VCPU report decode test:' in line]
+                    require(len(wait_rows) == len(test_rows) == 1,
+                            'forced report did not reach exactly one decode test')
+                    wait_fields = ('status', 'master', 'prid', 'pc')
+                    wait_match = re.search(
+                        r' '.join(rf'{field}=([0-9a-f]{{8}})'
+                                  for field in wait_fields), wait_rows[0])
+                    test_fields = ('ret', 'status', 'master', 'rptr',
+                                   'wptr', 'scratch', 'prid', 'pc')
+                    test_match = re.search(
+                        r'ret=(-?\d+) ' +
+                        r' '.join(rf'{field}=([0-9a-f]{{8}})'
+                                  for field in test_fields[1:]), test_rows[0])
+                    require(wait_match is not None and test_match is not None,
+                            'malformed forced-report downstream observation')
+                    downstream = {
+                        'after_wait': dict(zip(
+                            wait_fields,
+                            (hex(int(v, 16)) for v in wait_match.groups()))),
+                        'decode_ring_test': {
+                            'ret': int(test_match.group(1)),
+                            **dict(zip(test_fields[1:],
+                                       (hex(int(v, 16)) for v in
+                                        test_match.groups()[1:])))},
+                    }
+                emit('vcn_vcpu_report_force', {
+                    'phases': phases,
+                    'final': {k: hex(v) for k, v in final.items()},
+                    'status_two_latched_under_reset':
+                        int(phases[0]['status'], 16) == 2,
+                    'status_two_latched_after_release':
+                        int(phases[2]['status'], 16) == 2,
+                    'downstream': downstream,
+                    'interpretation_limit':
+                        'A host-written ready report is not evidence that the VCPU fetched or decoded an instruction.',
+                })
+            if args.module_kind == 'rbc-clock-status-calibration':
+                rows = [line for line in kernel_lines
+                        if 'BC250 RBC clock status calibration:' in line]
+                require(len(rows) == 1,
+                        'missing or duplicate RBC clock status calibration')
+                fields = ('gate0', 'gate1', 'gate2', 'status0', 'status1',
+                          'status2', 'ctrl')
+                values = re.findall(r'\b(?:' + '|'.join(fields) +
+                                    r')=([0-9a-f]{8})\b', rows[0])
+                require(len(values) == len(fields),
+                        'malformed RBC clock status calibration')
+                witness = dict(zip(fields, (int(v, 16) for v in values)))
+                require(witness['gate0'] == witness['gate2'] == 0x00100000
+                        and witness['gate1'] == 0x00100010
+                        and witness['ctrl'] == 0x8000018c,
+                        'RBC gate did not toggle and restore')
+                emit('vcn_rbc_clock_status_calibration', {
+                    'values': {key: hex(value)
+                               for key, value in witness.items()},
+                    'rbc_sclk_status_bits': [
+                        bool(witness[key] & 0x00000800)
+                        for key in ('status0', 'status1', 'status2')],
+                    'rbc_sclk_status_changed': bool(
+                        (witness['status0'] ^ witness['status1']) &
+                        0x00000800),
+                    'interpretation_limit':
+                        'A gate register toggle alone does not prove the RBC clock physically stopped.',
+                })
+            if args.module_kind in ('vcpu-clock-differential',
+                                    'dpg-clock-report'):
+                def clock_row(label, fields):
+                    rows = [line for line in kernel_lines
+                            if f'BC250 VCPU clock {label}:' in line]
+                    require(len(rows) == 1,
+                            f'missing or duplicate VCPU clock {label} report')
+                    values = re.findall(r'\b(?:' + '|'.join(fields) +
+                                        r')=([0-9a-f]{8})\b', rows[0])
+                    require(len(values) == len(fields),
+                            f'malformed VCPU clock {label} report')
+                    return dict(zip(fields, (int(v, 16) for v in values)))
+
+                diff = clock_row('differential',
+                                 ('gate', 'cgcctrl', 'cgc_on', 'cgc_off',
+                                  'cgc_back', 'ctrl_on', 'ctrl_off',
+                                  'ctrl_back', 'prid') +
+                                 (('dpg_on', 'dpg_off', 'dpg_back')
+                                  if args.module_kind == 'dpg-clock-report'
+                                  else ()))
+                released = clock_row('released',
+                                     ('gate', 'cgcctrl', 'cgc', 'ctrl',
+                                      'prid', 'pc', 'status') +
+                                     (('dpg',) if args.module_kind ==
+                                      'dpg-clock-report' else ()))
+                wait0 = clock_row('wait0',
+                                  ('gate', 'cgcctrl', 'cgc', 'ctrl', 'prid') +
+                                  (('dpg',) if args.module_kind ==
+                                   'dpg-clock-report' else ()))
+                require(diff['ctrl_on'] == diff['ctrl_back'] == 0x0ff20200 and
+                        diff['ctrl_off'] == 0x0ff20000,
+                        'VCPU clock control toggle did not restore')
+                emit(('vcn_dpg_clock_report' if args.module_kind ==
+                      'dpg-clock-report' else 'vcn_vcpu_clock_differential'), {
+                    'held': {k: hex(v) for k, v in diff.items()},
+                    'released': {k: hex(v) for k, v in released.items()},
+                    'wait0': {k: hex(v) for k, v in wait0.items()},
+                    'vcpu_gate_bits': [bool(diff['gate'] & 0x40000),
+                                       bool(released['gate'] & 0x40000),
+                                       bool(wait0['gate'] & 0x40000)],
+                    'vcpu_sclk_status_bits':
+                        [bool(diff[x] & 0x02000000)
+                         for x in ('cgc_on', 'cgc_off', 'cgc_back')],
+                    'vcpu_vclk_status_bits':
+                        [bool(diff[x] & 0x04000000)
+                         for x in ('cgc_on', 'cgc_off', 'cgc_back')],
+                    'rbc_sclk_status_bits':
+                        [bool(diff[x] & 0x00000800)
+                         for x in ('cgc_on', 'cgc_off', 'cgc_back')],
+                })
+            if args.module_kind == 'vcpu-memory-witness':
+                rows = [line for line in kernel_lines
+                        if 'BC250 VCPU memory witness:' in line]
+                require(len(rows) == 1,
+                        'missing or duplicate VCPU memory witness')
+                fields = ('stack0', 'stack_hold', 'stack_run', 'ctx0',
+                          'ctx_hold', 'ctx_run', 'status', 'prid', 'pc', 'pf')
+                values = re.findall(r'\b(?:' + '|'.join(fields) +
+                                    r')=([0-9a-f]{8})\b', rows[0])
+                require(len(values) == len(fields),
+                        'malformed VCPU memory witness')
+                witness = dict(zip(fields, (int(v, 16) for v in values)))
+                emit('vcn_vcpu_memory_witness', {
+                    'values': {k: hex(v) for k, v in witness.items()},
+                    'reset_held_control_stable':
+                        witness['stack0'] == witness['stack_hold'] and
+                        witness['ctx0'] == witness['ctx_hold'],
+                    'stack_changed_after_release':
+                        witness['stack_run'] != witness['stack_hold'],
+                    'context_changed_after_release':
+                        witness['ctx_run'] != witness['ctx_hold'],
+                    'interpretation_limit':
+                        'Unchanged stack/context does not exclude instruction fetch without a write.',
+                })
+            if args.module_kind == 'mmsch-ungate':
+                mmsch_rows = {}
+                for phase in ('held', 'released', 'wait0', 'restored'):
+                    rows = [line for line in trace
+                            if f'BC250 MMSCH ungate {phase}:' in line]
+                    require(len(rows) == 1,
+                            f'missing or duplicate MMSCH ungate {phase}')
+                    mmsch_rows[phase] = {
+                        field: int(value, 16)
+                        for field, value in re.findall(
+                            r'\b([a-z0-9]+)=([0-9a-f]{8})\b', rows[0])}
+                held = mmsch_rows['held']
+                restored = mmsch_rows['restored']
+                require(held['ctrl0'] == restored['ctrl'] == 0x8000018c
+                        and held['gate0'] == restored['gate'] == 0x00100000
+                        and all(mmsch_rows[phase]['ctrl'] == 0x0000018c
+                                and mmsch_rows[phase]['gate'] == 0
+                                for phase in ('held', 'released', 'wait0')),
+                        'MMSCH clock mode/gate did not change and restore')
+                emit('vcn_mmsch_ungate', {
+                    'phases': {phase: {field: hex(value)
+                                      for field, value in row.items()}
+                               for phase, row in mmsch_rows.items()},
+                    'reset_status_bits': {
+                        phase: hex(row['reset2'] & 0x00030000)
+                        for phase, row in mmsch_rows.items()},
+                    'vcpu_ready_during_trial': any(
+                        mmsch_rows[phase]['status'] & 2
+                        for phase in ('held', 'released', 'wait0')),
+                })
+            if args.module_kind in ('rbc-tmr-psp-writer',
+                                    'rbc-tmr-psp-writer-stage'):
+                rows = {}
+                for label in ('PSP writer result=', 'RBC BO control:',
+                              'RBC PSP packets:', 'RBC restored:'):
+                    matches = [line for line in kernel_lines
+                               if f'BC250 TMR {label}' in line]
+                    require(len(matches) <= 1,
+                            f'duplicate TMR packet report: {label}')
+                    if matches:
+                        rows[label] = matches[0]
+                writer_match = re.search(r'writer result=([0-9a-f]{8})',
+                                         rows.get('PSP writer result=', ''))
+                control_match = re.search(
+                    r'ok=(\d+) rptr=([0-9a-f]{8}) marker=([0-9a-f]{8})',
+                    rows.get('RBC BO control:', ''))
+                tmr_match = re.search(
+                    r'ok=(\d+) rptr=([0-9a-f]{8}) marker=([0-9a-f]{8})',
+                    rows.get('RBC PSP packets:', ''))
+                emit('vcn_rbc_tmr_psp_writer', {
+                    'psp_writer_result': (hex(int(writer_match[1], 16))
+                                          if writer_match else None),
+                    'normal_bo_ring_control': ({
+                        'ok': bool(int(control_match[1])),
+                        'read_pointer': int(control_match[2], 16),
+                        'scratch': hex(int(control_match[3], 16)),
+                    } if control_match else None),
+                    'psp_written_tmr_ring': ({
+                        'ok': bool(int(tmr_match[1])),
+                        'read_pointer': int(tmr_match[2], 16),
+                        'scratch': hex(int(tmr_match[3], 16)),
+                    } if tmr_match else None),
+                    'ring_restored': 'RBC restored:' in rows,
+                    'interpretation_limit':
+                        'An RBC marker from TMR proves ring packet fetch, not VCPU instruction fetch.',
+                })
+            if args.module_kind in ('rbc-perfmon-phase',
+                                    'rbc-tmr-perfmon-phase'):
+                readings = {}
+                for label in ('held', 'released'):
+                    rows = [line for line in trace if
+                            f'BC250 VCN perfmon phase {label}:' in line]
+                    require(1 <= len(rows) <= 2,
+                            f'missing or unexpected perfmon phase {label} reports')
+                    if len(rows) == 2:
+                        require(any('BC250 VCN RBC guard skipped' in line
+                                    for line in trace),
+                                'second perfmon phase lacks recovery guard')
+                    match = re.search(
+                        r'ctrl=([0-9a-f]{8}) lo=([0-9a-f]{8}) '
+                        r'hi=([0-9a-f]{8}) status=([0-9a-f]{8}) '
+                        r'pf=([0-9a-f]{8})', rows[0])
+                    require(match is not None and int(match[1], 16) == 0x802,
+                            f'malformed perfmon phase {label}')
+                    readings[label] = {
+                        'count': int(match[2], 16) |
+                            (int(match[3], 16) << 32),
+                        'status': '0x' + match[4],
+                        'page_fault': '0x' + match[5],
+                        'report_count': len(rows),
+                    }
+                emit('vcn_perfmon_vcpu_phase', readings)
+            if args.module_kind in ('rbc-perfmon-control',
+                                    'rbc-perfmon-phase',
+                                    'rbc-tmr-perfmon-phase'):
+                reports = [line for line in trace
+                           if 'BC250 VCN RBC perfmon selector=' in line]
+                done = [line for line in trace
+                        if 'BC250 VCN RBC perfmon done:' in line]
+                require(reports and len(done) == 1,
+                        'missing ring perfmon selector or completion')
+                readings = {}
+                for line in reports:
+                    match = re.search(
+                        r'selector=(\d+) ctrl=([0-9a-f]{8}) '
+                        r'lo=([0-9a-f]{8}) hi=([0-9a-f]{8}) '
+                        r'rptr=([0-9a-f]{8}) scratch=([0-9a-f]{8})',
+                        line)
+                    require(match is not None,
+                            'malformed ring perfmon selector report')
+                    index = int(match[1])
+                    require(index not in readings and 0 <= index < 32,
+                            'duplicate or out-of-range ring perfmon selector')
+                    readings[index] = {
+                        'control': int(match[2], 16),
+                        'count': int(match[3], 16) |
+                            (int(match[4], 16) << 32),
+                        'read_pointer': int(match[5], 16),
+                        'scratch': int(match[6], 16),
+                    }
+                match = re.search(
+                    r'completed=(\d+) restored=([0-9a-f]{8}) '
+                    r'status=([0-9a-f]{8})', done[0])
+                require(match is not None, 'malformed ring perfmon completion')
+                completed = int(match[1])
+                require(completed == len(readings) and
+                        all(row['read_pointer'] == 512 and
+                            row['scratch'] == 0xdeadbeef and
+                            row['control'] == (index << 8) | 2
+                            for index, row in readings.items()) and
+                        int(match[2], 16) == 0,
+                        'ring fetch or perfmon control did not complete')
+                emit('vcn_rbc_perfmon_control', {
+                    'completed_fetches': completed,
+                    'all_selectors_scanned': completed == 32,
+                    'nonzero_selectors': [index for index, row in
+                                          sorted(readings.items())
+                                          if row['count']],
+                    'counts': {str(index): row['count'] for index, row in
+                               sorted(readings.items())},
+                    'final_status': '0x' + match[3],
+                    'interpretation_limit':
+                        'Selector 8 counts a known ring fetch, but its exact '
+                        'event meaning is unknown; a zero VCPU-window count '
+                        'does not prove that the VCPU made no memory read.',
                 })
             if args.module_kind == 'mmsch-mode':
                 pre = [line for line in trace

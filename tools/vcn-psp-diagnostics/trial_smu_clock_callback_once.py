@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""One-shot BC250 VCN clock callback trial; cold cycle afterward, no SRAM undo.
+"""One-shot BC250 VCN clock callback trial; no SRAM undo.
 
 The SMU scheduler calls callback index 24 at 0xc760, which points to the
-clock-table walker. This runner first sets VCN slot 0x17's requested frequency
-using Q3 message 0x1d while generations match, then advances the requested
-generation. The scheduler can now only see the intended positive VCN request
+clock-table walker. This runner sets VCN slot 0x17 to the guarded 800 or
+1250 MHz request using Q3 message 0x1d while generations match, then advances
+the requested generation. The scheduler can now only see that VCN request
 when it processes the table. The earlier reverse order raced the scheduler
 and stalled on rollback. This experiment does not write BIOS or Pico flash.
 The Pi 5 must have a verified, active PDU user timer before this runs.
@@ -29,6 +29,7 @@ SOURCE = clock.SOURCE
 SOURCE_SHA = clock.SOURCE_SHA
 GPU = clock.GPU
 BOOT_ID = clock.BOOT_ID
+SUPPORTED_VCLKS = (800, 1250)
 
 
 def require(condition, message):
@@ -51,7 +52,8 @@ def state(trial):
     }
 
 
-def callback_once(trial, emit, deadline_seconds=3):
+def callback_once(trial, emit, deadline_seconds=3, vclk_mhz=1250):
+    require(vclk_mhz in SUPPORTED_VCLKS, 'unreviewed VCN clock request')
     smu = trial.smu
     require(clock.word(smu, 0x17090) == 0xc700 and
             clock.word(smu, 0x17098) == 0xc7a0 and
@@ -75,16 +77,17 @@ def callback_once(trial, emit, deadline_seconds=3):
     # both the other zero entries and the VCN target are staged.
     for index in clock.ZERO_INDICES:
         trial.write(clock.BASE+0x14c+(index-1)*12, clock.SENTINEL)
-    trial.send(clock.ARG_1250)
+    argument = (16 << 16) | vclk_mhz
+    trial.send(argument)
     staged = state(trial)
-    expected_target = hex(int.from_bytes(struct.pack('<f', 1250.0),
+    expected_target = hex(int.from_bytes(struct.pack('<f', float(vclk_mhz)),
                                          'little'))
     require(staged['generation'] == [0, 0] and
             staged['requested_word'] == expected_target and
             staged['applied_word'] == '0x0' and
             staged['hardware_code'] == 0,
             'clock walker ran before the trigger')
-    emit('staged_before_generation', staged)
+    emit('staged_before_generation', {'vclk_mhz': vclk_mhz, 'state': staged})
 
     # This single write triggers the scheduler's callback; never write the
     # generation backward. Recovery is a cold cycle via the Pi PDU timer.
@@ -99,11 +102,15 @@ def callback_once(trial, emit, deadline_seconds=3):
         if current != last:
             emit('callback_state', current)
             last = current
+        code = current['hardware_code']
         if (current['generation'] == [1, 1] and
                 current['applied_word'] == expected_target and
-                current['hardware_code'] == 16 and
-                current['slot_code'] == 16):
-            emit('callback_completed', {'clock_code': 16,
+                1 <= code <= 32 and
+                current['slot_code'] == code and
+                current['remembered_code'] == code and
+                code == {800: 25, 1250: 16}[vclk_mhz]):
+            emit('callback_completed', {'clock_code': code,
+                                        'requested_vclk_mhz': vclk_mhz,
                                         'hardware_decode_tested': False,
                                         'cold_cycle_required': True})
             return current

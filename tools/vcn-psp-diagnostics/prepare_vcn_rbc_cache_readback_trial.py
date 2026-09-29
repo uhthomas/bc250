@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Test one VCN ring cache write with an existing PSP read-only oracle.
 
-Use the pinned ordinary BO and existing signed BO-premap hook. While holding
-VCPU reset, write a temporary smaller cache-size0 through the ring; ask the
+Use the pinned ordinary BO and existing signed BO-premap hook. Send a VCPU
+reset-assert packet, write a temporary smaller cache-size0 through the ring; ask the
 PSP to compare all sixteen cache words before it writes anything; restore
 the original ring value; compare again; then replay the signed original map.
 No BIOS EEPROM or Pico QSPI write is part of this trial.
@@ -21,7 +21,7 @@ VCN_SHA = '67861711fc08ba47eacb594a623b7e250669621ee5587052b90b0074b2af66e8'
 
 OLD_SIZE = '''\t\tWRITE_ONCE(ring->ring[9],
 \t\t\t   AMDGPU_GPU_PAGE_ALIGN(adev->vcn.inst[0].fw->size + 4));'''
-NEW_SIZE = '''\t\t/* One page below the pinned 0x64000, only while VCPU reset is held. */
+NEW_SIZE = '''\t\t/* One page below the pinned 0x64000, after reset-assert packet. */
 \t\tWRITE_ONCE(ring->ring[9], 0x63000);'''
 BEFORE_SECOND = '''\t\tfor (sample_i = 16; sample_i < 32; ++sample_i)
 '''

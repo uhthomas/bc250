@@ -1,8 +1,528 @@
 # Next hardware-decode investigation step
 
+**Update 2026-09-29 23:02 UTC, 800 MHz firmware and domain-cycle controls:**
+On a fresh diagnostic boot, the unmodified Navi10/Navi12 VCN firmware
+(SHA256 `a9ec155695b5020009d3986cfd4ebd00ad9ddbd12ac7e5fa15ec86b8a571dbe5`)
+was staged in the pinned BO at SMU VCLK code 25 (800 MHz request). The PSP
+reload returned `ret=0/status=0`, the ring fetched and executed its scratch
+packet, and the Pico reported no routing fault. `UVD_STATUS=4`, VCPU trace
+PC `0`, and VCPU ready false matched the earlier 1250 MHz baseline. This
+does not prove the VCPU clock is physically stopped: root VCLK programming
+and the local `CLK_EN` report have positive readbacks, but neither is a
+direct measurement of VCPU oscillation or instruction fetch. [800 MHz
+journal](../output/video-decode-20260922/results/bc250-vcn-rbc-vcpu-trace-vclk800-20260929T225342Z-4b6107.jsonl)
+SHA256 `bb714ecda3b357c83c2f3cbc7e5e9a5d2fe78c3018c041d0377f6450400608b7`.
+
+A second guarded boot tested whether domain 6 had to **transition** after
+programming VCLK rather than receive another power-up write while already
+up. After applying 800 MHz, the runner closed all three slot gates, sent
+the pinned SMU down sequence, and observed domain status change
+`0x01010101→0x01011010`; it then sent the up sequence, observed
+`0x01010110`, reopened the gates and verified the original powered status,
+three enables, and VCLK code 25. The authentic firmware and ring controls
+again passed, but VCPU ready remained false, `UVD_STATUS=4`, PC `0`, and
+no frame decoded. Thus a **real SMU domain-6 down/up acknowledgement** after
+VCLK selection did not start the VCPU. It does not isolate a downstream
+reset, isolation, or instruction-cache fault. The test made only volatile
+SMU writes, with a Pi PDU recovery timer; BIOS EEPROM and Pico QSPI were
+untouched. [Cycle journal](../output/video-decode-20260922/results/bc250-vcn-rbc-vcpu-trace-vclk800-dom6-cycle-20260929T230148Z-3bb60e.jsonl)
+SHA256 `7c0fb5906ae9c2a98ac656f6b8df05cd44067a3f9c875717a74c46f0eabfafa7`.
+Both runs returned to clean diagnostic boots. `CC_UVD_HARVESTING` is an
+availability observation; the next work will not try to force it to zero.
+The useful discriminator is a VCPU-specific clock/reset witness or an
+early correctly ordered ring-written firmware-map and reset-release
+sequence, measured with a VCPU execution marker.
+
+**Update 2026-09-29, native 800 MHz VCN clock differential:** On fresh
+diagnostic boot `96450ffc-45eb-4b74-b5fa-bb2127137333`, the guarded SMU
+Queue-3 `0x1d` request for VCN slot `0x17` at **800 MHz** returned
+`status=1/result=0x100320`. The periodic callback advanced its generation
+to `[1,1]`, set both requested and applied table values to IEEE-754
+`0x44480000` (800.0), and changed the slot, remembered and root-visible
+hardware code from `0` to **25**. The 1250 MHz control used code 16. This is
+a positive, different SMU clock-programming response; it is not a separate
+frequency-counter measurement. The three measured domain-6 enables read
+`[1,1,1]` and the domain gate read `0`. The opt-in early-store VCPU module
+then read back its patched BO and executed calibrated RBC packets, but the
+VCPU marker remained zero, `UVD_STATUS=4`, PC/PRID zero and decode timed out.
+The 800 MHz requested/applied words and code 25 were unchanged on both
+sides of unloading the failed module. The one-shot GRUB entry and Pi timer
+were cleaned; the BC250 remains on that diagnostic boot with the 800 MHz
+SMU state retained in RAM, `/boot` read-only, Pico `fault=0` and no flash
+write. [Journal](../output/video-decode-20260922/results/bc250-vcn-vcpu-early-store-vclk800-20260929T224542Z-d66a3c.jsonl)
+SHA256 `8ce620d68afe87a9fe7849d9afd697ecae556f6844f97f81628ce99d70690bea`;
+[kernel log](../output/video-decode-20260922/results/bc250-vcn-vcpu-early-store-vclk800-20260929T224542Z-d66a3c.dmesg)
+SHA256 `207c7c6d497c4c751ff7a36f5c1cc8dca7fb01949d81527a973c9e2bf46e9d48`.
+The first planned 800 MHz attempt made no SMU write: Python imported an
+older callback from `/var/tmp` and raised before the clock request. The
+runner now pins the imported callback path, API and source hash in its
+read-only preflight; a direct diagnostic cold cycle recovered from that
+aborted run. The next comparison should target another upstream VCPU
+power/reset/fetch prerequisite, not merely this VCLK rate.
+
+**Update 2026-09-29, retained SMU setup and same-boot reprobe:** The user's
+suggestion to leave the native SMU setup in place worked as a volatile state
+transition. A guarded `vcpu-early-store` run on boot
+`b1dda54a-6aae-4695-8579-0d0c5f89ff02` requested VCLK 1250 MHz, enabled
+the three measured domain-6 slots and released their gate. After the failed
+VCN probe, `rmmod amdgpu` succeeded. Read-only SMU samples on both sides of
+the unload were identical: table generation `[1,1]`, requested/applied
+`0x449c4000`, VCLK slot and hardware code `16`, slot enables `[1,1,1]`,
+domain control `0`, and clock-table SHA256
+`f04fff55d95123fcc3ebd852436538e84b1edb8a14b11f12bafbcf54ba7038cb`.
+The one-shot GRUB entry was removed and the Pi timer stopped. The VCPU's
+early-store marker still stayed zero. The [first journal](../output/video-decode-20260922/results/bc250-vcn-vcpu-early-store-20260929T222637Z-ef07e3.jsonl)
+and [kernel log](../output/video-decode-20260922/results/bc250-vcn-vcpu-early-store-20260929T222637Z-ef07e3.dmesg)
+have SHA256 `95d65487ecf8f31ab97ad3c2a7650092358e02bbf1d5cfb277383668b404889e`
+and `aa10f9dce0b30b191d2d54b64bbf7b463e52bcc12da8b05fb95cd1dee23250e0`.
+
+A second, hash-pinned `vcpu-marker-stub` module passed a read-only preflight
+against that exact retained SMU state, but its journal stopped at
+`insmod_intent`; there was no new VCN kernel line. SSH became unavailable.
+The prior-boot kernel log shows the *first* probe's VCPU status `4`, PC `0`,
+VCN ring timeout and failed GPU reset; it does not identify where the second
+module insertion stopped. The [second journal](../output/video-decode-20260922/results/bc250-vcn-vcpu-marker-stub-20260929T222944Z-471e98.jsonl)
+and [prior-boot kernel log](../output/video-decode-20260922/results/bc250-vcn-vcpu-marker-stub-20260929T222944Z-471e98.prior-kernel.log)
+have SHA256 `7cd9337d5273e651125c2e245284f43f00b80e30ea80a97dce8ab89b1f41bc4b`
+and `2b110dd61e63d978d85742627593c788bf71a7eb243ffaaa65a68044660455c9`.
+An authorized outlet-8 cold cycle recovered clean diagnostic boot
+`e4732575-1cbf-43e0-9d7d-f828a1c0dd0f`, with `/boot` read-only, no pending
+GRUB entry, no armed Pi timer, and Pico `fault=0`. The SMU settings can be
+kept for inspection or other work within a boot, but unloading a failed
+`amdgpu` probe did not leave the GPU safe for another module probe. New
+driver trials should cold-cycle directly to diagnostics; combine related
+measurements into one module probe where possible. Neither test wrote BIOS
+EEPROM or Pico QSPI flash. No VCPU instruction was observed decoding.
+
+**Update 2026-09-29, SMU VCPU power-up question:** A missing Linux SMU
+power-up *call* is real: `smu_dpm_set_vcn_enable()` returns success without
+sending a PMFW request because Cyan Skillfish has no
+`.dpm_set_vcn_enable` callback. The public SMU 11.8 message header has no
+named `PowerUpVcn`. In the SHA256-pinned BC250 88.6.0 SMU SRAM image,
+Queue-0 opcode `0x09` (Van Gogh's VCN power-up number) has a null handler;
+`0x0b/0x0c` are core-P-state handlers, not VCN power commands. A new
+[all-queue static-call audit](../output/video-decode-20260922/results/smu-all-queue-reachability-vcn-slots-20260929.txt)
+of the pinned image found no direct caller or aligned absolute pointer to
+the firmware's slot-`0x17` and slot-`0x16` request routines at `0x24780`
+and `0x247b4` (report SHA256
+`06f4a8f98f8bbaf92e2147aecb97190306b06900bea449dc0f1160212369c6b3`).
+Computed dispatch or firmware-internal events remain possible. This does
+not identify an SMU message to send or prove that PMFW lacks a VCPU enable
+path. Earlier guarded runs already obtained native VCLK code 16/1250 MHz,
+released the tested domain-6 gates and power controls, and still saw
+`UVD_STATUS=4` with no VCPU witness. The next useful discriminator is a
+measured VCPU clock/isolation or instruction-fetch transition, not a
+borrowed mailbox opcode. Read-only preflight confirmed current BC250
+diagnostic boot `b1dda54a-6aae-4695-8579-0d0c5f89ff02`, Pico SRAM
+profile `vcn-tmr-rbc-writer-stage` with `fault=0`, `/boot` read-only and
+no pending GRUB entry. No board or flash write occurred in this audit.
+
+**Update 2026-09-29, custom VCPU program probes:** We can place Xtensa
+instructions in the VCPU's temporary direct-load GPU buffer without changing
+the installed firmware or flashing the BIOS. A 12-byte write-and-loop
+program and a second canary at the firmware's early bootstrap store both
+read back correctly, but neither produced a memory marker after calibrated
+ring reset pulses. `UVD_STATUS` stayed `4`, PC/PRID stayed zero and no frame
+decoded. A one-boot write of `0` to powered `CC_UVD_HARVESTING` read back
+`3`, so that register path did not clear the disable indication. These
+results do not prove the VCPU never fetched: the stack mapping and reset
+entry remain inferred. The [custom-program report](vcn-vcpu-custom-program-20260929.md)
+has the source, evidence hashes, limitations and next upstream gate. The
+BC250 recovered to clean diagnostic boot
+`b1dda54a-6aae-4695-8579-0d0c5f89ff02`; no EEPROM/QSPI write occurred.
+
+**Update 2026-09-29, out-of-VRAM VCPU address-error probe:** A guarded
+[RAM-only trial](../tools/vcn-psp-diagnostics/prepare_vcn_vcpu_address_fault.py)
+required the measured VRAM range `0xf400000000–0xf41fffffff`, then changed
+only the VCPU firmware BAR low word to `0x20080000` while VCPU reset was
+held. The new `0xf420080000` address is beyond that reported VRAM aperture.
+The signed PSP oracle reported the expected low-20-bit mismatch
+`0x71080000`; ordered ring markers reached RPTR 16/32/48. The VCPU was
+released for a bounded window at that BAR, then reset, returned to the
+authenticated firmware BAR and released again. The PSP reported full map
+and reset restoration `0x73000000`, and signed replay succeeded.
+`UVD_SYS_INT_STATUS` remained `0` in both windows; trace-read data, PC,
+PRID and LMI readings stayed unchanged, and `UVD_STATUS` remained the
+driver-written `4`. However, `UVD_SYS_INT_EN` read `0` in the reset-held
+sample, so a zero interrupt status is not a validated negative witness
+for an attempted fetch. The public VCN 2.0 register header names bit 0
+`PIF_ADDR_ERR_INT`, but does not establish that this route reports every
+firmware-cache fetch failure. No VCPU instruction or frame was proven.
+The [journal](../output/video-decode-20260922/results/bc250-vcn-vcpu-address-fault-20260929T200745Z-b3491c.jsonl)
+and [kernel log](../output/video-decode-20260922/results/bc250-vcn-vcpu-address-fault-20260929T200745Z-b3491c.dmesg)
+SHA256 are `d8612d7ac177edcbfcff57ddb301202e58b111591984cfa4a895823fe440e764`
+and `7321d1eb0591ab582d938c987fafca75bafe3420726e0b2f573bc6159f7230ec`.
+The BC250 recovered to clean diagnostic boot
+`17a0a0f0-c7be-4878-b8e1-089f24ed9f39`, `/boot` read-only, no pending
+GRUB entry or Pi timer; no BIOS EEPROM or Pico QSPI write occurred.
+
+**Correction 2026-09-29, sampled page-fault register:** The VCN 2.0
+[register definition](../output/video-decode-20260922/kernel-build/linux-7.2.5/drivers/gpu/drm/amd/include/asic_reg/vcn/vcn_2_0_0_sh_mask.h)
+labels `UVD_PF_STATUS` bits for JPEG and encoder faults, not VCPU instruction
+fetch. Its zero in the firmware-BAR differential therefore does **not**
+exclude a VCPU fetch fault. `UVD_SYS_INT_STATUS.PIF_ADDR_ERR_INT` is a
+more relevant named address-error signal, although the public header does
+not prove that every firmware-fetch failure raises it. A bounded trial
+must sample that signal with a BAR clearly outside the 512 MiB VRAM
+aperture, while preserving the signed full-map restoration check.
+
+**Update 2026-09-29, DPG VCPU clock-enable report:** A guarded
+[volatile differential](../tools/vcn-psp-diagnostics/prepare_vcn_dpg_clock_report.py)
+held VCPU reset and toggled `UVD_VCPU_CNTL.CLK_EN`
+`0x0ff20200→0x0ff20000→0x0ff20200`. The separate
+`UVD_DPG_CLK_EN_VCPU_REPORT` read changed **`5→4→5`** at the same steps:
+its named `CLK_EN` bit followed the control exactly. After reset release
+and at the first one-second wait it still read `5`; `UVD_CGC_STATUS` stayed
+`0xbfffffff`, `UVD_STATUS` stayed at the driver's written busy value `4`,
+PRID/PC stayed zero and no frame decoded. The report's upper
+`VCPU_REPORT` field remained `2`, the same bit pattern as `UVD_STATUS=4`
+shifted by one; the register definitions do not establish whether this is
+an independent execution-state signal. The changed `CLK_EN` report is a
+useful cross-check that the enable state propagates to the DPG register,
+but it is **not** a frequency measurement or a proven VCPU instruction
+fetch. The signed TMR BAR ring oracle and firmware replay again passed.
+The [trial journal](../output/video-decode-20260922/results/bc250-vcn-dpg-clock-report-20260929T195559Z-76e384.jsonl)
+and [kernel log](../output/video-decode-20260922/results/bc250-vcn-dpg-clock-report-20260929T195559Z-76e384.dmesg)
+SHA256 are `2c385749f5346bdeffd20502d4a78b691241503014cdd16ef5561bf5bfc2e061`
+and `070809658b0509b7c87fe4a53ba3e699bdd84699a37b157351b814796526f2fe`.
+The board recovered to clean diagnostic boot
+`0635de5d-2bcf-4b01-9aca-46f1781d429d`, `/boot` read-only, no pending
+GRUB entry or Pi timer; no BIOS EEPROM or Pico QSPI write occurred.
+
+**Update 2026-09-29, version register and firmware-fetch differential:**
+On the guarded BC250 boot, `UVD_VERSION` read `0xdeadbeef` with the VCN
+power-gated and `0x0002001b` after the local power sequence, which decodes
+as major version 2, minor `0x1b`. This proves the version register became
+readable, not that the VCPU ran. To test whether it could be fetching the
+wrong firmware silently, a [RAM-only ring trial](../tools/vcn-psp-diagnostics/prepare_vcn_fetch_bar_differential.py)
+used the already authenticated TMR BAR oracle. While reset was held, the
+ring shifted firmware BAR low by 64 KiB; the PSP reported the exact
+`0x71010000` sentinel. The ring then restored the normal `0x64000` cache
+size and released VCPU reset for about 40 ms with the shifted BAR, before
+asserting reset, restoring the original BAR, and releasing again for a
+same-boot control window. Ordered ring markers reached RPTR 16, 32 and 48;
+the PSP subsequently reported `0x73000000` for the fully restored cache
+map and reset state, and signed replay returned `ret=0/status=0`.
+`UVD_STATUS` stayed `4`, PC trace and page-fault status stayed zero, PRID
+stayed zero, and LMI status/latency were identical in both windows. This
+found **no observable response** to fetching from the wrong BAR. It does
+not exclude a silent bad fetch: trace enable has not been shown to latch,
+and a failed fetch need not assert the sampled page-fault register. Thus
+the ring's address/data delivery is proven, while VCPU instruction fetch
+and decode remain unproven. The
+[trial journal](../output/video-decode-20260922/results/bc250-vcn-fetch-bar-differential-20260929T194932Z-547a14.jsonl)
+and [kernel log](../output/video-decode-20260922/results/bc250-vcn-fetch-bar-differential-20260929T194932Z-547a14.dmesg)
+SHA256 are `090c462d085bc8a6276b125cb5f72adeafc0433f243abb33d9cea6f726bce49b`
+and `211b67a3375190a883068c4dcaf45a1ba0547c4beb0f03ee29bade2744aa509f`.
+The board recovered to clean diagnostic boot
+`a0d846bf-da15-4c8b-9aa9-f3991dccc978`, `/boot` read-only, no pending
+GRUB entry or Pi recovery timer. No BIOS EEPROM or Pico QSPI write occurred.
+
+**Update 2026-09-29, RBC clock-status differential:** The VCPU
+`CLK_EN` control latches, and its `CGC_GATE.VCPU` bit is clear, but
+`UVD_CGC_STATUS=0xbfffffff` did not change when the VCPU clock control or
+gate was toggled. A guarded
+[RBC clock-status calibration](../tools/vcn-psp-diagnostics/prepare_vcn_rbc_clock_status_calibration.py)
+then toggled the independent ring controller gate while the ring was idle
+and VCPU reset held. The gate readback was
+`0x00100000→0x00100010→0x00100000`, but `CGC_STATUS` stayed
+`0xbfffffff` throughout. The gate toggle alone cannot prove the RBC clock
+physically stopped; the subsequent ring test did prove that RBC could fetch
+packets after restoration. Its signed TMR BAR oracle passed with the exact
+shift and full map restoration (`0x71010000→0x73000000`), and the final
+firmware replay returned `ret=0/status=0`. VCPU status stayed `4`, PC `0`,
+and no frame decoded. These tests give no calibrated mapping from the
+`CGC_STATUS` bits to physical VCPU clock activity. The signed diagnostic
+reset-clear readback describes the intervened path; an earlier
+ordinary-startup PSP read reported both VCPU reset and VCLK reset-status
+asserted. [Trial journal](../output/video-decode-20260922/results/bc250-vcn-rbc-clock-status-calibration-20260929T194021Z-9b4691.jsonl)
+and [kernel log](../output/video-decode-20260922/results/bc250-vcn-rbc-clock-status-calibration-20260929T194021Z-9b4691.dmesg)
+SHA256 are `f8793ac739d25db2e47d5cabe98f36515b6034af4dd0255153a33285959e1792`
+and `b412fb68c613fcd6628d010c2baa61884ca7def392009e144a896306679c7a35`.
+The board recovered to clean diagnostic boot
+`4ccb5cc3-893e-4bf4-b1cf-3d2260c1fcb7`, `/boot` read-only, no pending
+GRUB entry or Pi recovery timer; the Pico TMR SRAM profile reports fault 0.
+No BIOS EEPROM or Pico QSPI write occurred.
+
+**Update 2026-09-29, MMSCH clock controls are insufficient:** The previous
+`mmsch-mode` trial cleared only `UVD_CGC_CTRL.MMSCH_MODE` and saw that control
+latch, but it did not make the VCPU ready. A new guarded
+[mode-plus-gate trial](../tools/vcn-psp-diagnostics/prepare_vcn_mmsch_ungate.py)
+cleared `MMSCH_MODE` and `UVD_CGC_GATE.MMSCH` together from
+`0x8000018c/0x00100000` to `0x0000018c/0x00000000`. Both readbacks held
+through reset release and the first one-second wait, then restored to their
+original values. `UVD_SOFT_RESET2` still reported both MMSCH clock reset
+status bits (`0x00030000`) throughout; `UVD_STATUS=4`, VCPU PC `0`, and no
+frame decoded. The same signed TMR BAR ring oracle passed and firmware replay
+returned `ret=0/status=0`. This tests the plausible two-control combination
+without proving that the separate MMSCH scheduler is powered or usable on
+the BC250. It gives no basis to make an MMSCH toggle permanent in bootc.
+The pinned VCN 2.0 driver only calls its MMSCH startup from the SR-IOV
+virtual-function path; the BC250 diagnostic uses the separate bare-metal
+VCPU startup path. The observed `CC_UVD_HARVESTING=3` also asserts the
+`MMSCH_DISABLE` availability indication. These facts further weaken the
+case for a permanent MMSCH clock override as a VCPU fix.
+The [journal](../output/video-decode-20260922/results/bc250-vcn-mmsch-ungate-20260929T192118Z-ed3551.jsonl)
+and [kernel log](../output/video-decode-20260922/results/bc250-vcn-mmsch-ungate-20260929T192118Z-ed3551.dmesg)
+SHA256 are `bd125726ce68ba7d55b2a78f5ee1b2f8f54bce00f47792e892806fb564c0abd5`
+and `7d6d933068b39307790fe287c6f3e642b44106c5bfc0d9cbd24da0b90216c830`.
+The board recovered to clean diagnostic boot
+`5abe808d-7189-436b-a2ec-4e1b44d63bc7`, `/boot` read-only, no pending
+GRUB entry or Pi recovery timer. No BIOS EEPROM or Pico QSPI write occurred.
+
+**Update 2026-09-29, direct VCPU clock and memory witnesses:** A guarded,
+volatile [clock differential](../tools/vcn-psp-diagnostics/prepare_vcn_vcpu_clock_differential.py)
+held VCPU reset, toggled only `UVD_VCPU_CNTL.CLK_EN`
+`0x0ff20200→0x0ff20000→0x0ff20200`, then released reset. The host
+readback confirmed the toggle and restoration. `UVD_CGC_GATE=0x00100000`
+has the named VCPU gate bit clear, and `UVD_CGC_CTRL=0x8000018c` has the
+VCPU clock mode bit clear. `UVD_CGC_STATUS=0xbfffffff` did not respond to
+the toggle or reset release, so its VCPU SCLK/VCLK bits are **not a validated
+clock witness** on this board. `UVD_VCPU_PRID=0`, trace PC `0` and
+`UVD_STATUS=4` supplied no positive execution evidence. The hardware probe
+completed and the existing ring/PSP TMR BAR oracle passed; its runner returned
+1 only because its new parser filtered out the `BC250 VCPU` log lines. The
+parser now reads those lines from the full kernel log; no repeat board boot
+was made for that software error. [Clock journal](../output/video-decode-20260922/results/bc250-vcn-vcpu-clock-differential-20260929T190548Z-47045c.jsonl)
+and [kernel log](../output/video-decode-20260922/results/bc250-vcn-vcpu-clock-differential-20260929T190548Z-47045c.dmesg)
+SHA256 are `48a600b3070a532c2c423547189051fb3b201780a5892ead29a5b97419c24571`
+and `90138ca940128e1ad8af5805f32b9683c6dcf00f8b29f1c41f02591469161cda`.
+
+A second guarded [memory witness](../tools/vcn-psp-diagnostics/prepare_vcn_vcpu_memory_witness.py)
+read the mapped 128 KiB stack and 512 KiB context while VCPU reset was
+held, again after 20 ms held, and 20 ms after release, before any diagnostic
+ring packet ran. Both regions' CRC32 values stayed `0` at all three points;
+`UVD_STATUS=4`, PRID, trace PC and page-fault status were unchanged. Thus no
+VCPU write to its mapped stack or context was observed in that window. A
+fetch without a write remains possible; unchanged CRCs are not a positive
+control for the VCPU's memory route. The signed TMR BAR
+oracle again proved the ring's exact address/data writes and full map
+restoration, with signed replay `ret=0/status=0`. This separates **known
+register delivery** from the still-unproven **firmware instruction fetch**.
+The [journal](../output/video-decode-20260922/results/bc250-vcn-vcpu-memory-witness-20260929T191418Z-7c4d77.jsonl)
+and [kernel log](../output/video-decode-20260922/results/bc250-vcn-vcpu-memory-witness-20260929T191418Z-7c4d77.dmesg)
+SHA256 are `33d938400f9a85c6b06ecb6b4c597ff623d09a4f40ee86744fe1dff4e27aba19`
+and `7530850a404f5e9ee641654c49039a8c64abc9c3daee4fecd0bbd6d5d34fcb27`.
+The BC250 recovered to clean diagnostic boot
+`3f60ff2f-3ec2-495f-8324-bc6cb64f81ce`, `/boot` read-only, no pending
+GRUB entry or Pi timer; the Pico TMR profile remains in SRAM with fault 0.
+No BIOS EEPROM or Pico QSPI write occurred. The next test needs a positive
+VCPU-specific fetch/clock witness or the upstream source of the already
+observed `CC_UVD_HARVESTING=3` availability indication; simply repeating
+`CLK_EN` and reset writes cannot distinguish those causes.
+
+**Update 2026-09-29, Navi 12 firmware and ring protocol cross-check:**
+The running BC250 was read again: both `navi12_vcn.bin.xz` and
+`navi10_vcn.bin.xz` resolve to the same installed file, and both decompress
+to SHA256 `a9ec155695b5020009d3986cfd4ebd00ad9ddbd12ac7e5fa15ec86b8a571dbe5`.
+The pinned Linux source selects `navi12_vcn` for Navi 12 VCN 2.0.2 and
+`navi10_vcn` for the opt-in BC250 VCN 2.0.3, while assigning both the
+same `vcn_v2_0_ip_block`. Thus switching firmware names on this image
+would change neither VCPU code nor driver protocol.
+
+The [VCN 2.0 driver](../output/video-decode-20260922/kernel-build/linux-7.2.5/drivers/gpu/drm/amd/amdgpu/vcn_v2_0.c)
+defines ring-internal `GPCOM_CMD/DATA0/NO_OP` at `0x503/0x504/0x53f`;
+the [register header](../output/video-decode-20260922/kernel-build/linux-7.2.5/drivers/gpu/drm/amd/include/asic_reg/vcn/vcn_2_0_0_offset.h)
+has their host offsets at `0x583/0x584/0x5bf`, each exactly `0x80` higher.
+The same translation yields the diagnostic firmware BAR `0x61f→0x59f`,
+cache size `0x243→0x1c3`, VCPU control `0x258→0x1d8`, and reset
+`0x260→0x1e0`. A local assertion checked these constants; differential
+PSP readback and the ring's `RPTR`/scratch markers then confirmed the
+tested packets on the physical BC250. Navi 12's normal decode submissions
+also send `VCN_DEC_CMD_PACKET_START` and indirect-buffer address/size
+packets. Our register packets prove ring transport, but those decode
+commands cannot establish VCPU instruction fetch while `UVD_STATUS` remains
+the driver-written busy value `4`. No firmware, board or flash state was
+changed for this comparison.
+
+An offline comparison found a genuinely different local `navi10_vcn.bin`
+on the workstation, but it is an **older** microcode revision:
+`0x08118009`, 404,544 bytes, SHA256
+`ac5f2182b0ddee7a2886bf1239a47b4027becd0c37a1b0b6cac1f335393302c9`,
+versus the BC250 image's `0x0811800d`, 405,952 bytes. Both headers' CRC32
+values match their own payloads. The older local blob is not a justified
+replacement for the already authenticated newer image; no live firmware
+selection trial was made.
+
+Navi 12 also has a useful cautionary precedent: [AMD's 2021 kernel
+patch](https://lkml.org/lkml/2021/3/8/557) excludes PCI device
+`0x7360`, revision `0xc7`, from VCN registration because that SKU has no
+video support. This is a different ASIC from the BC250 and does not prove
+anything about its fuse state. It does show why the existence of a common
+VCN firmware file and driver protocol cannot establish that a particular
+SKU has an enabled VCPU.
+
+**Update 2026-09-29, TMR firmware BAR address proved through the ring:**
+The [guarded BAR probe](../tools/vcn-psp-diagnostics/prepare_vcn_rbc_tmr_bar_oracle.py)
+held the VCPU in reset and used `PACKET0(mmUVD_LMI_VCPU_CACHE_64BIT_BAR_LOW
+- 0x80, 0)` (ring register `0x59f`) to move the authenticated TMR cache-0
+low word from `0x1fa00000` to `0x1fa10000`. The first ring marker executed
+at `RPTR=16`; before any PSP diagnostic replay, the signed read-only hook
+reported `0x71010000`: cache-map mismatch **index 0**, observed low 20 bits
+`0x10000`, exactly the deliberate shifted BAR. The second ring batch
+restored `0x1fa00000`, restored cache size `0x64000`, released VCPU reset
+and executed its marker at `RPTR=32`. The PSP then matched **all sixteen**
+TMR/BO map words and returned `0x73000000`, including reset low 24 bits
+zero; the final unmarked signed firmware replay returned `ret=0/status=0`.
+This directly validates ring routing, data and address for the firmware BAR
+as well as the previously verified size and reset words. It does **not**
+prove that the VCPU can fetch firmware from that mapped TMR address.
+`UVD_STATUS=4` and VCPU PC `0` remained unchanged through the first wait.
+
+The [journal](../output/video-decode-20260922/results/bc250-vcn-rbc-tmr-bar-oracle-20260929T183628Z-69f0f8.jsonl)
+and [kernel log](../output/video-decode-20260922/results/bc250-vcn-rbc-tmr-bar-oracle-20260929T183628Z-69f0f8.dmesg)
+have SHA256 `fc32214912857db9b23160749507b87f9e68cf080d10817ea17df75009b57819`
+and `d82b4d6aac27be044560cdbebb18ad4bb6b629a187076f2f9c0fddebf9bb8950`.
+The trial used the existing Pico TMR profile in RP2350 SRAM, with no Pico
+fault or mismatch. The BC250 recovered to clean diagnostic boot
+`9d6d45e7-bc71-46e5-904e-5eb7f4eb62a9`, `/boot` read-only, no pending
+GRUB entry or Pi timer. No BIOS EEPROM or Pico QSPI write occurred.
+
+**Update 2026-09-29, phase-matched memory counter with authenticated TMR:**
+The [guarded TMR phase trial](../tools/vcn-psp-diagnostics/prepare_vcn_rbc_perfmon_phase.py)
+used the same PSP-authenticated firmware source as the TMR reset oracle.
+LMI perfmon selector 8 counted `0` during a 20 ms VCPU-reset hold and `0`
+in the roughly 29 ms after release. In the **same boot**, a known
+512-dword ring buffer at GPU address `0x264000` was fetched 32 times;
+every run reached `RPTR=0x200` and wrote `SCRATCH9=0xdeadbeef`, and
+selector 8 counted `32`. The first startup attempt held `UVD_STATUS=4`,
+VCPU PC `0` and page-fault status `0`. Driver recovery emitted a second
+held/released pair, then the ring guard correctly skipped its retry; the
+runner accepted the first complete phase pair and returned success. Thus
+the ring address, contents and measured event are live on the same boot as
+the TMR VCPU attempt. Selector 8's exact event semantics remain unknown;
+zero during the VCPU window cannot independently prove no VCPU memory read.
+
+The [journal](../output/video-decode-20260922/results/bc250-vcn-rbc-tmr-perfmon-phase-20260929T182715Z-33bf53.jsonl)
+and [kernel log](../output/video-decode-20260922/results/bc250-vcn-rbc-tmr-perfmon-phase-20260929T182715Z-33bf53.dmesg)
+have SHA256 `0fe2c924b4ef83d8d1e5946a9e178941ae19d1fa2d079afde6398db115df2c69`
+and `6720a346fcf5d28cfa96b3c06560a90deb7eadd23a5bb4b3d2d791d1faddf593`.
+The Pico verified 4,012/4,012 SRAM substitutions with no fault or mismatch.
+The board recovered to clean diagnostic boot
+`4b04170c-e2dc-4eb8-8897-fd8e5af24fa8`, `/boot` read-only, no pending
+GRUB entry or Pi timer. No BIOS EEPROM or Pico QSPI write occurred.
+The next target is the upstream VCPU availability or isolation state,
+including the source of `CC_UVD_HARVESTING=3` before Linux startup.
+
+**Update 2026-09-29, authenticated TMR firmware-source control:** A second
+signed, RAM-only interposer view changed only VCPU firmware cache window 0
+from the ordinary BO to the PSP-authenticated TMR address
+`0xf41fa00000` with offset `0`, preserving the verified BO stack,
+context and shared windows. The [matching ring probe](../tools/vcn-psp-diagnostics/prepare_vcn_rbc_tmr_reset_oracle.py)
+left that BAR and offset untouched. PSP firmware load returned
+`ret=0/status=0`; the first marked PSP read again returned `0x71363000`
+for the ring's temporary cache size, and the second returned `0x73000000`
+after **all sixteen TMR/BO map words matched** and reset low 24 bits read
+zero. Both ring markers executed (`RPTR=16/32`), the signed unmarked replay
+succeeded, and `UVD_STATUS` remained `4` through the first full wait with
+VCPU trace and page-fault status zero. The ordinary-BO source was therefore
+not the sole tested reason for lack of VCPU ready; the ring address and
+reset-release controls work with the authenticated TMR map too. This still
+does not establish an instruction fetch or decode.
+
+The [journal](../output/video-decode-20260922/results/bc250-vcn-rbc-tmr-reset-oracle-20260929T182424Z-29e2a2.jsonl)
+and [kernel log](../output/video-decode-20260922/results/bc250-vcn-rbc-tmr-reset-oracle-20260929T182424Z-29e2a2.dmesg)
+have SHA256 `eec09bd406d8feeaf9a4659f1106859db252b2d127321bf671eaee965a60bc30`
+and `91c2fa8062cc63a8f77f560041796b8a362fbaa6441acffa56375eaeadf1be07`.
+The TMR ROM differed from the BO reset-oracle view only in two map words,
+its hash and signature; seven native ARM cases passed. Its Pico UF2 targeted
+RP2350 SRAM only, with 2,006/2,006 substitutions verified, fault zero. The
+BC250 recovered to clean diagnostic boot
+`e5e54bdc-0b5d-4641-965c-d7181b05445f`, `/boot` read-only, no pending
+GRUB entry or Pi timer. No BIOS EEPROM or Pico QSPI write occurred. The
+next investigation should identify the upstream source of the observed
+`CC_UVD_HARVESTING=3` disable indication or another VCPU availability gate;
+repeating these cache and reset packets cannot resolve it.
+
+**Update 2026-09-29, ring reset and cache addresses confirmed by the PSP:**
+The [signed RAM-only PSP hook](../tools/pico2-interposer/driver-delayed-vcn-map-reset-premap.S)
+first compares all sixteen VCPU cache-map words, then reads
+`UVD_SOFT_RESET` at PSP address `0x20180` before any diagnostic map replay.
+The [existing guarded ring probe](../tools/vcn-psp-diagnostics/prepare_vcn_rbc_cache_readback_trial.py)
+sent `PACKET0(0x1e0,0),0x8` to assert VCPU reset and
+`PACKET0(0x1c3,0),0x63000` to change cache size. Its first marker executed
+(`RPTR=16`, scratch `0x11112222`), and the PSP returned `0x71363000`:
+the expected temporary cache value was read. The ring then restored
+`0x64000` and sent `PACKET0(0x1e0,0),0` to release reset. Its second marker
+executed (`RPTR=32`, scratch `0x33334444`). The PSP compared **all sixteen**
+cache values successfully and reported `0x73000000`: tagged reset low 24
+bits were zero, including `VCPU_SOFT_RESET` bit 3 and
+`VCPU_VCLK_RESET_STATUS` bit 19. The diagnostic tag occupies bits 24:27,
+so those four reset bits were not measured. The final unmarked signed PSP
+replay returned `ret=0/status=0`. This confirms the intended ring data and
+addresses for cache size and reset release on the PSP-visible path.
+`UVD_STATUS` remained `4`; no VCPU instruction fetch or decoded frame is
+proven. The first structured event used the mistaken field name
+`psp_reset_low28`; the raw `0x73000000` status and corrected parser make
+the low-24-bit limit explicit.
+
+The [journal](../output/video-decode-20260922/results/bc250-vcn-rbc-reset-oracle-20260929T181501Z-bc29af.jsonl)
+and [kernel log](../output/video-decode-20260922/results/bc250-vcn-rbc-reset-oracle-20260929T181501Z-bc29af.dmesg)
+have SHA256 `42f192454fbaaafad4c4c8122806fcd4e4bde337ab9173f61efcd0cc4a7252eb`
+and `7fe166f835b64733e4efdde781f3759f02767452edc23f515b6e8cd3fc19a0f4`.
+The signed interposer view passed seven native ARM execution cases, differs
+from the previous view only in the PSP diagnostic cave/hash/signature, and
+the Pico UF2 targets RP2350 SRAM only. The Pico verified 2,010/2,010
+substitutions with no fault or mismatch. The BC250 returned to clean
+diagnostic boot `adf44369-12bb-4c21-98d4-496fe82fef45`, `/boot` read-only,
+no pending GRUB entry or Pi timer. No BIOS EEPROM or Pico QSPI write occurred.
+The next focus is **what the VCPU is trying to fetch**: this trial mapped
+the ordinary firmware BO, whereas the native PSP path normally uses the
+authenticated TMR address. Test the same reset-release and PSP readback
+with the TMR firmware map before concluding an upstream availability gate.
+
+**Update 2026-09-29, phase-matched VCPU/ring counter trial:** In the
+[guarded phase probe](../tools/vcn-psp-diagnostics/prepare_vcn_rbc_perfmon_phase.py),
+selector 8 counted `0` during a 20 ms VCPU-reset hold and `0` during the
+roughly 29 ms immediately after reset release. The same boot then replayed
+the 512-dword ring buffer 32 times: each fetch reached `RPTR=0x200` and
+wrote `SCRATCH9=0xdeadbeef`, while selector 8 counted `32` on its fetch.
+`UVD_STATUS=4` and VCN page-fault status `0` persisted. This validates the
+counter and the ring buffer within the startup trial. The counter's event
+meaning is not documented, so zero after release **does not by itself prove**
+that the VCPU made no instruction fetch. It is consistent with the VCPU
+still being reset or otherwise held upstream. The direct host read of
+`UVD_SOFT_RESET` returned all ones and cannot settle that question; an
+earlier PSP-side read reported VCPU reset and VCLK-reset-status bits set.
+
+The [journal](../output/video-decode-20260922/results/bc250-vcn-rbc-perfmon-phase-20260929T180143Z-4ce3c9.jsonl)
+and [kernel log](../output/video-decode-20260922/results/bc250-vcn-rbc-perfmon-phase-20260929T180143Z-4ce3c9.dmesg)
+have SHA256 `8cacd81f602e9ab293cdbcedc38ee77e2e9902737a20ecb944c9672978f489df`
+and `e2d94444c47e1d50f1de1f32f8a1e56f736274f8db23f4ed9abc15e45ab7b489`.
+The module returned successfully; the runner returned 1 only because its
+parser required one phase report and driver recovery produced a second
+held/released pair before the ring guard skipped the retry. The parser now
+accepts that guarded retry. The board recovered to clean diagnostic boot
+`4daf72b0-538d-4dfc-b00c-15bba2da9fa3`, `/boot` read-only, no pending
+GRUB entry or Pi timer, Pico BO-premap SRAM profile fault-free. No BIOS
+EEPROM or Pico QSPI write occurred. The most direct next discriminator is
+a PSP-side read of `UVD_SOFT_RESET` immediately after the ring's reset
+assertion/release, with known ring markers and cache readback controls.
+
+**Update 2026-09-29, measured ring memory traffic:** The guarded
+[perfmon control](../tools/vcn-psp-diagnostics/prepare_vcn_rbc_perfmon_control.py)
+replayed 512 dwords of known `PACKET0` scratch writes from the decode-ring
+GPU buffer at `0x264000` for each of the 32 LMI perfmon selectors. The
+`RB_NO_FETCH` hold left `RPTR=0` and scratch unchanged; after enabling fetch,
+all 32 repetitions reached `RPTR=0x200` and wrote `0xdeadbeef`. Selector 8
+counted 32 events during its repetition; every other selector counted zero.
+This gives us a live memory-activity counter calibrated against an actual
+ring fetch. Its exact event semantics remain undocumented, so a zero count
+around VCPU startup alone cannot yet prove the VCPU made no memory request.
+The [journal](../output/video-decode-20260922/results/bc250-vcn-rbc-perfmon-control-20260929T175422Z-1fb297.jsonl)
+and [kernel log](../output/video-decode-20260922/results/bc250-vcn-rbc-perfmon-control-20260929T175422Z-1fb297.dmesg)
+have SHA256 `1e7440db6863599c8a815fe0a5bdd4d7da7a09de4f1dc5e947ee8909a65cc5a8`
+and `219657a8ddd919c510b5d131eca43b4c879aed28f2dbe27661cd73ba9b200cc0`.
+The board returned to clean diagnostic boot
+`d19075ca-c0cc-4fbb-bf91-3ceff0626bc9`, `/boot` read-only, no pending
+GRUB entry or Pi timer. The BO-premap Pico profile remains in SRAM without
+faults or mismatches. No BIOS EEPROM or Pico QSPI write occurred. Next,
+compare selector 8 while VCPU reset is held, then immediately after release,
+with a ring-fetch positive control in the same boot.
+
 **Update 2026-09-29, ring cache-size write verified through the PSP:**
 The [guarded readback probe](../tools/vcn-psp-diagnostics/prepare_vcn_rbc_cache_readback_trial.py)
-held VCPU reset and used `PACKET0(0x1c3,0)` to change the firmware-cache
+sent a VCPU reset-assert packet, then used `PACKET0(0x1c3,0)` to change the firmware-cache
 size from the pinned `0x64000` to a temporary `0x63000`. After the first
 ring marker executed (`RPTR=16`, scratch `0x11112222`), the signed,
 RAM-only PSP pre-map hook compared all sixteen cache words **before** any
@@ -1061,19 +1581,24 @@ power and clocks, maps firmware, releases reset, then waits for
 the generic request returns success without a PMFW command. This is a real
 startup gap, although the proper BC250 power/isolation command remains
 unidentified. The authenticated firmware load, responsive local PGFSM and
-version, and even a native VCLK request have not made the VCPU ready. PSP
-reads/writes of VCN cache and reset words also do not match host MMIO
-visibility. A delayed PSP read now confirms that reset bits 3 and 19 stayed
-clear through the first full VCPU wait, so rapid reassertion of those bits
-is not a complete explanation. The phase-matched PSP/host `mmUVD_SCRATCH1`
-control passed, so a blanket host/PSP VCN route split is insufficient to
-explain that mismatch;
-the cache/reset-specific access gate, alias, or upstream isolation remains
-unidentified. Separately, JPEG decoder scratch accepts a host sentinel while
-JRBC scratch does not. The next useful causal control is a verified action
-on the cache/reset access or upstream VCN isolation path that changes VCPU
-readiness, followed by an actual decoded frame. Forcing the harvest readback
-to zero would not satisfy those checks.
+version, and even a native VCLK request have not made the VCPU ready. Host
+MMIO reads of the cache and reset words still return all ones, but the
+ring-to-PSP oracle above now proves that ring writes of the firmware BAR,
+cache size and VCPU reset reach the same PSP-visible registers. The TMR
+control additionally shows all sixteen intended map words and reset bits
+3 and 19 clear after release, while VCPU status remains unready. Thus a
+wrong ring register address, an unlatched firmware BAR or cache-size value,
+or a persistently asserted VCPU reset is not a sufficient explanation. The
+calibrated LMI selector-8 counter is
+zero during the VCPU window and positive for ring traffic in the same boot;
+its semantics do not establish whether the VCPU fetched any bytes. The
+phase-matched PSP/host `mmUVD_SCRATCH1` control also passed, so a blanket
+host/PSP VCN route split does not explain the remaining host read mismatch.
+The upstream VCPU availability or isolation state remains unidentified.
+Separately, JPEG decoder scratch accepts a host sentinel while JRBC scratch
+does not. A useful next causal control must change VCPU readiness and
+ultimately decode a frame. Forcing the harvest readback to zero would not
+satisfy those checks.
 
 **Update 2026-09-29, UVDW power is not the missing JRBC start step by itself:**
 The scratch control revealed one powered-state difference worth testing:

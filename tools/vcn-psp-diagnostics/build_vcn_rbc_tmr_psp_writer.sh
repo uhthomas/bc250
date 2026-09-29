@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Build a guarded VCN ring cache-window write with PSP readback.
+# Build the guarded PSP-written TMR packet/RBC read trial. No flash writes.
 set -euo pipefail
 
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 build=$repo/output/video-decode-20260922/kernel-build
 tree=$build/linux-7.2.5/drivers/gpu/drm/amd/amdgpu
-candidate=$build/vcn-rbc-cache-readback-20260929
+candidate=$build/vcn-rbc-tmr-psp-writer-20260929
 late=$build/late-psp-probe-20260927
 
 test "$(sha256sum "$tree/amdgpu_psp.c" | cut -d' ' -f1)" = \
@@ -16,11 +16,11 @@ test "$(sha256sum "$tree/vcn_v2_0.c" | cut -d' ' -f1)" = \
     e75a0427f18662884b4f8251167bb693608da7f17bfefd2225ee17707738fbef
 test "$(sha256sum "$late/amdgpu_psp.c" | cut -d' ' -f1)" = \
     9d574280fa9f76b6adbec4c3fb971a2c16e9c8614a150b07c8e92759f5a3e62e
-python3 "$repo/tools/vcn-psp-diagnostics/prepare_vcn_rbc_cache_readback_trial.py"
+python3 "$repo/tools/vcn-psp-diagnostics/prepare_vcn_rbc_tmr_psp_writer.py"
 test "$(sha256sum "$candidate/amdgpu_vcn.c" | cut -d' ' -f1)" = \
     67861711fc08ba47eacb594a623b7e250669621ee5587052b90b0074b2af66e8
 test "$(sha256sum "$candidate/vcn_v2_0.c" | cut -d' ' -f1)" = \
-    71c91c8b587c4d3649dca0536893463bef240cb0e97896464c4ef0bf0b3b386e
+    8d3b0d6533abc716430588ecc938373bfe7faca41b7daa4e38959fb5a98615a6
 
 backup_psp=$(mktemp "$build/.amdgpu_psp.c.XXXXXX")
 backup_vcn=$(mktemp "$build/.amdgpu_vcn.c.XXXXXX")
@@ -44,9 +44,7 @@ test "$(podman image inspect --format '{{.Id}}' "$image")" = \
     78b2b1cd586f3dded13b36d7a77d0b0ca81704dca1c82c03943a0e7b33a0fa17
 podman --runtime=runc run --rm --network=none --cpus=4 --memory=8g \
     --security-opt=label=disable --userns=keep-id \
-    -v "$build:/work" \
-    "$image" \
-    bash -euc '
+    -v "$build:/work" "$image" bash -euc '
         release=7.2.5-200.fc44.x86_64
         headers=/usr/src/kernels/$release
         tree=/work/linux-7.2.5/drivers/gpu/drm/amd/amdgpu
@@ -54,8 +52,8 @@ podman --runtime=runc run --rm --network=none --cpus=4 --memory=8g \
         make -C "$headers" M="$tree" \
             KCFLAGS=-I/work/linux-7.2.5/include/trace -j4 modules
         objcopy --strip-debug "$tree/amdgpu.ko" \
-            /work/vcn-rbc-cache-readback-20260929/amdgpu-vcn-rbc-cache-readback.ko
-        test "$(modinfo -F vermagic /work/vcn-rbc-cache-readback-20260929/amdgpu-vcn-rbc-cache-readback.ko | sed "s/[[:space:]]*$//")" = \
+            /work/vcn-rbc-tmr-psp-writer-20260929/amdgpu-vcn-rbc-tmr-psp-writer.ko
+        test "$(modinfo -F vermagic /work/vcn-rbc-tmr-psp-writer-20260929/amdgpu-vcn-rbc-tmr-psp-writer.ko | sed "s/[[:space:]]*$//")" = \
             "7.2.5-200.fc44.x86_64 SMP preempt mod_unload"
     '
-sha256sum "$candidate/amdgpu-vcn-rbc-cache-readback.ko"
+sha256sum "$candidate/amdgpu-vcn-rbc-tmr-psp-writer.ko"

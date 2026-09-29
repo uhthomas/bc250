@@ -31,6 +31,8 @@ SAMPLES = {
                  80, 0x200dc, 'vcn-delayed-mpc-cntl-premap'),
     'map-windows': ('a3f11b54106c8f84c69a91ea1d6cf49159fbc1561a403c13aa2f2a66c1728958',
                     124, None, 'vcn-delayed-map-windows-premap'),
+    'map-reset': ('c383d1f5938f09ed5c82aec6caffa4fefff18f9c531b81a676b6fca95b90c1c4',
+                  152, 0x20180, 'vcn-delayed-map-reset-premap'),
     'mpc-mux': ('a563c4df93e96779f5d839d69c74ddefc2a2a012aeddfd97f57f1ea42ad420ea',
                 156, None, 'vcn-delayed-mpc-mux-premap'),
     'tmr-prefix': ('931be6cf5f368719e20dbc7843d30f0da3efeb1b8ac052c21b6c6ebf1bad8a56',
@@ -41,6 +43,10 @@ SAMPLES = {
                              236, None, 'vcn-delayed-tmr-readattr-control'),
     'tmr-readattr-target': ('9080f6d7d4337c600a0effdde1a8a4b905347acba26278ff61ad003f75fe9f05',
                             232, None, 'vcn-delayed-tmr-readattr-target'),
+    'tmr-rbc-write': ('e8ebdd092805d0d73202d6a7cfbeb10eff1721ceebae761a2cf8de6cc1f73b96',
+                      280, None, 'vcn-tmr-rbc-writer'),
+    'tmr-rbc-stage': ('a7c0392765498269c7be8ac5400fcfe7f33ad9e8d99b128dca4e61b860ad4931',
+                      304, None, 'vcn-tmr-rbc-writer-stage'),
 }
 HOOK = common.DRIVER + 0x17c8e
 DISPATCH = common.DRIVER + 0x200
@@ -65,8 +71,8 @@ def main() -> None:
                  'dispatch', 'output-dir'):
         parser.add_argument('--' + name, required=True, type=Path)
     args = parser.parse_args()
-    if args.direct_bo and args.sample != 'map-windows':
-        parser.error('--direct-bo requires --sample map-windows')
+    if args.direct_bo and args.sample not in ('map-windows', 'map-reset'):
+        parser.error('--direct-bo requires --sample map-windows or map-reset')
     base_sha = (bo_fetch.BO_TRIAL_SHA if args.direct_bo else BASE_SHA)
     profile_sha = (bo_fetch.BO_PROFILE_SHA if args.direct_bo else PROFILE_SHA)
     expected_map = (bo_fetch.EXPECTED_BO_MAP if args.direct_bo else video.EXPECTED_MAP)
@@ -171,14 +177,19 @@ def main() -> None:
     common.write_private(args.output_dir / 'sparse_physical_profile.h',
                          profile)
     summary = {
-        'purpose': f'read PSP VCN {args.sample} after first VCPU wait, before cache-map replay; RAM-only',
+        'purpose': (f'locate the PSP TMR writer timeout with a pre-map stage marker; RAM-only'
+                    if args.sample == 'tmr-rbc-stage' else
+                    f'write sixteen RBC words to video TMR tail during marked powered VCN reload; RAM-only'
+                    if args.sample == 'tmr-rbc-write' else
+                    f'read PSP VCN {args.sample} after first VCPU wait, before cache-map replay; RAM-only'),
         'base_sha256': base_sha,
         'combined_sha256': sha(candidate),
         'profile_sha256': sha(profile),
         'changed_words': len(changed),
         'expected_patch_reads_per_pass': responses,
         'psp_dispatch_address': '0xe00200',
-        'psp_sample_address': ('0xf400162ec0' if args.sample in ('tmr-map-control', 'tmr-readattr-control')
+        'psp_sample_address': ('0xf41faff000' if args.sample in ('tmr-rbc-write', 'tmr-rbc-stage') else
+                               '0xf400162ec0' if args.sample in ('tmr-map-control', 'tmr-readattr-control')
                                else '0xf41fa00000' if args.sample in ('tmr-prefix', 'tmr-readattr-target')
                                else hex(sample_address) if sample_address is not None
                                else [hex(address) for address in (
@@ -188,10 +199,13 @@ def main() -> None:
                                     0x20eb0, 0x20eb4, 0x20110, 0x20114,
                                     0x20ec0, 0x20ec4, 0x20118, 0x2011c,
                                     0x2108c, 0x21088, 0x20150, 0x20154))]),
-        'psp_sample_timing': 'before 17 cache-window replay writes',
-        'full_width_comparison': args.sample in ('map-windows', 'mpc-mux',
+        'psp_sample_timing': ('during marked powered VCN reload, before 17 cache-window replay writes'
+                              if args.sample in ('tmr-rbc-write', 'tmr-rbc-stage') else
+                              'before 17 cache-window replay writes'),
+        'full_width_comparison': args.sample in ('map-windows', 'map-reset', 'mpc-mux',
                                                  'tmr-prefix', 'tmr-map-control',
-                                                 'tmr-readattr-control', 'tmr-readattr-target'),
+                                                 'tmr-readattr-control', 'tmr-readattr-target',
+                                                 'tmr-rbc-write', 'tmr-rbc-stage'),
         'vcn_map_tables_relocated': False,
         'bios_flash_allowed': False,
         'pico_qspi_write_allowed': False,

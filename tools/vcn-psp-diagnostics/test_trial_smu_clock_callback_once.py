@@ -22,10 +22,12 @@ spec.loader.exec_module(callback)
 
 
 class SchedulerFake:
-    def __init__(self, image):
+    def __init__(self, image, vclk_mhz=1250):
         self.ram = bytearray(image)
         self.hardware = 0
         self.events = []
+        self.vclk_mhz = vclk_mhz
+        self.applied_code = 25 if vclk_mhz == 800 else 16
 
     def alive(self):
         return True
@@ -41,7 +43,8 @@ class SchedulerFake:
         if address == clock.BASE+4 and value == 1:
             self.events.append('generation_trigger')
             requested = clock.u32(self.ram, clock.BASE+0x14c+15*12)
-            expected = struct.unpack('<I', struct.pack('<f', 1250.0))[0]
+            expected = struct.unpack('<I',
+                                     struct.pack('<f', float(self.vclk_mhz)))[0]
             assert requested == expected
             for index in clock.ZERO_INDICES:
                 assert clock.u32(self.ram,
@@ -52,9 +55,9 @@ class SchedulerFake:
                 struct.pack_into('<I', self.ram,
                                  clock.BASE+0x5c+(index-1)*12, desired)
             struct.pack_into('<I', self.ram, clock.BASE, 1)
-            self.ram[clock.SLOT_RECORD+2] = 16
-            self.ram[clock.SLOT_RECORD+6] = 16
-            self.hardware = 16
+            self.ram[clock.SLOT_RECORD+2] = self.applied_code
+            self.ram[clock.SLOT_RECORD+6] = self.applied_code
+            self.hardware = self.applied_code
 
     def sec_smn_read32(self, address):
         return 1, {clock.CLOCK_SMN: self.hardware,
@@ -63,13 +66,15 @@ class SchedulerFake:
 
     def send_message(self, queue, message, args, check_status):
         assert (queue, message, check_status) == (3, 0x1d, False)
-        assert args == [clock.ARG_1250]
+        argument = (16 << 16) | self.vclk_mhz
+        assert args == [argument]
         assert clock.u32(self.ram, clock.BASE) == 0
         assert clock.u32(self.ram, clock.BASE+4) == 0
         self.events.append('target_message')
         struct.pack_into('<I', self.ram, clock.BASE+0x14c+15*12,
-                         struct.unpack('<I', struct.pack('<f', 1250.0))[0])
-        return 1, clock.ARG_1250
+                         struct.unpack('<I',
+                                       struct.pack('<f', float(self.vclk_mhz)))[0])
+        return 1, argument
 
 
 class CallbackTest(unittest.TestCase):
@@ -115,6 +120,23 @@ class CallbackTest(unittest.TestCase):
         self.assertEqual(fake.events, ['target_message', 'generation_trigger'])
         self.assertEqual(result['hardware_code'], 16)
         self.assertIsNone(result['metrics'])
+
+    def test_800mhz_request_staged_before_generation(self):
+        fake = SchedulerFake(self.image, vclk_mhz=800)
+        events = []
+        trial = clock.Trial(fake, self.image,
+                            lambda name, data: events.append((name, data)),
+                            require_gpu_metrics=False)
+        trial.preflight()
+        result = callback.callback_once(
+            trial, lambda name, data: events.append((name, data)),
+            vclk_mhz=800)
+        self.assertEqual(fake.events, ['target_message', 'generation_trigger'])
+        self.assertEqual(result['applied_word'],
+                         hex(struct.unpack('<I', struct.pack('<f', 800.0))[0]))
+        self.assertEqual(result['hardware_code'], 25)
+        self.assertEqual(next(data['requested_vclk_mhz'] for name, data in events
+                              if name == 'callback_completed'), 800)
 
 
 if __name__ == '__main__':

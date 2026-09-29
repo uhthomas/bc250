@@ -2,8 +2,8 @@
 """Run guarded BC250 VCN trials without restoring Fedora between cold cycles.
 
 This orchestrates the existing pinned diagnostic runner and Pi PDU helper. It
-does not write the BC250 BIOS EEPROM or Pico QSPI flash. Every test still needs
-a cold cycle because its native SMU clock-table change is not rolled back.
+does not write the BC250 BIOS EEPROM or Pico QSPI flash. A retained-state trial
+keeps the native SMU clock and domain settings when guarded cleanup succeeds.
 """
 
 import argparse
@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import re
 import shlex
+import struct
 import subprocess
 import sys
 import time
@@ -24,6 +25,7 @@ PI = 'pi@192.168.0.27'
 ROOT = '/var/lib/bc250/validation/video-20260922'
 KERNEL = f'{ROOT}/kernel'
 RUNNER = f'{KERNEL}/run_late_vcn_native_clock_trial.py'
+SMU_READER = f'{KERNEL}/read_retained_vcn_smu.py'
 ENTRY_SHA = '9675158c6e976ec9fee3741eac39d4a81e128577e62a5684049a6d5a277d6ef9'
 ACTIVE_UF2 = '/home/pi/bc250-vcn-psp-bo-fetch-20260929/bc250_psp_bo_fetch.uf2'
 ACTIVE_SHA = '0922b436f613cfa9af982a505b752232527fb8ba18164cfe1f6779693c3915bb'
@@ -124,6 +126,18 @@ def require_pico(status, profile):
     elif profile == 'premap':
         tokens = ('profile=vcn-delayed-map-windows-premap-bo-fetch ',
                   'mode=2', 'fault=0', 'host_cs=1')
+    elif profile == 'reset':
+        tokens = ('profile=vcn-delayed-map-reset-premap-bo-fetch ',
+                  'mode=2', 'fault=0', 'host_cs=1')
+    elif profile == 'tmrreset':
+        tokens = ('profile=vcn-delayed-map-reset-premap-tmr-fetch ',
+                  'mode=2', 'fault=0', 'host_cs=1')
+    elif profile == 'tmrwriter':
+        tokens = ('profile=vcn-tmr-rbc-writer ',
+                  'mode=2', 'fault=0', 'host_cs=1')
+    elif profile == 'tmrwriterstage':
+        tokens = ('profile=vcn-tmr-rbc-writer-stage ',
+                  'mode=2', 'fault=0', 'host_cs=1')
     else:
         tokens = ('BC250-PICO2-CS-PASS v2 ', 'armed=1', 'gate=1',
                   'host_cs=1', 'miso=INPUT', 'bios_write=UNAVAILABLE')
@@ -157,7 +171,18 @@ def load_pass():
         require_pico(current, 'pass')
         print('Pico CS-PASS already armed.', flush=True)
         return
-    require_pico(current, 'active')
+    current_profile = ('tmrwriterstage' if
+                       'profile=vcn-tmr-rbc-writer-stage ' in current else
+                       'tmrwriter' if
+                       'profile=vcn-tmr-rbc-writer ' in current else
+                       'tmrreset' if
+                       'profile=vcn-delayed-map-reset-premap-tmr-fetch '
+                       in current else 'reset' if
+                       'profile=vcn-delayed-map-reset-premap-bo-fetch '
+                       in current else 'premap' if
+                       'profile=vcn-delayed-map-windows-premap-bo-fetch '
+                       in current else 'active')
+    require_pico(current, current_profile)
     pin_uf2(PASS_UF2, PASS_SHA)
     result = remote(PI, ['python3', '/home/pi/load_and_arm_cs_pass.py',
                          '--uf2', PASS_UF2, '--picotool', PICOTOOL], timeout=30)
@@ -281,19 +306,68 @@ def enter():
     require_pico(pico_status(), 'active')
 
 
-def trial(kind):
+def retained_smu(boot_id, vclk_mhz):
+    result = remote(BC, ['env', f'PYTHONPATH={ROOT}/bc250-smu-unlock',
+                         'python3', SMU_READER, '--expected-boot-id', boot_id],
+                    timeout=25)
+    data = json.loads(result.stdout)
+    expected_word = f'{struct.unpack("<I", struct.pack("<f", float(vclk_mhz)))[0]:#010x}'
+    require(data['generation'] == [1, 1] and
+            data['requested_word'] == expected_word and
+            data['applied_word'] == expected_word and
+            data['vclk_mhz_from_applied_word'] == float(vclk_mhz) and
+            1 <= data['slot_code'] <= 32 and
+            data['slot_code'] == data['hardware_code'] ==
+            data['remembered_code'] and
+            data['hardware_code'] == {800: 25, 1250: 16}[vclk_mhz] and
+            data['slot_enables'] == [1, 1, 1] and
+            data['domain_control'] == 0,
+            f'native VCN SMU setup did not remain active: {data}')
+    return data
+
+
+def trial(kind, *, retain=False, vclk_mhz=1250, cycle_domain6_once=False):
     require(re.fullmatch(r'[a-z0-9-]+', kind), 'invalid module kind')
+    require(vclk_mhz in (800, 1250), 'unreviewed VCN clock request')
     current = state()
     require_clean_boot(current, 'diagnostic')
-    profile = 'premap' if kind == 'rbc-cache-readback' else 'active'
+    profile = ('tmrwriterstage' if kind in ('rbc-tmr-psp-writer-stage',
+                                           'vcpu-marker-stub',
+                                           'vcpu-early-store',
+                                           'vcpu-harvest-try') else
+               'tmrwriter' if kind in ('rbc-tmr-psp-writer',
+                                     'vcpu-spin-stub',
+                                     'vcpu-spin-ring-reset') else
+               'tmrreset' if kind in ('rbc-tmr-reset-oracle',
+                                    'vcpu-early-ring-reset',
+                                    'rbc-tmr-bar-oracle',
+                                    'rbc-tmr-perfmon-phase',
+                                    'vcpu-clock-differential',
+                                    'vcpu-memory-witness',
+                                    'mmsch-ungate',
+                                    'rbc-clock-status-calibration',
+                                    'fetch-bar-differential',
+                                    'dpg-clock-report',
+                                    'vcpu-address-fault',
+                                    'vcpu-pif-interrupt',
+                                    'vcpu-report-force',
+                                    'vcpu-report-handoff') else
+               'reset' if kind == 'rbc-reset-oracle' else
+               'premap' if kind in ('rbc-cache-readback',
+                                    'rbc-perfmon-control',
+                                    'rbc-perfmon-phase') else 'active')
     require_pico(pico_status(), profile)
     pdu_status()
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-    name = f'bc250-vcn-{kind}-{stamp}-{uuid.uuid4().hex[:6]}'
+    cycle_suffix = '-dom6-cycle' if cycle_domain6_once else ''
+    name = (f'bc250-vcn-{kind}-vclk{vclk_mhz}{cycle_suffix}-'
+            f'{stamp}-{uuid.uuid4().hex[:6]}')
     remote_journal = f'{KERNEL}/{name}.jsonl'
     argv = ['env', f'PYTHONPATH={ROOT}/bc250-smu-unlock', 'python3', RUNNER,
             '--expected-boot-id', current['boot_id'], '--module-kind', kind,
-            '--output', remote_journal]
+            '--vclk-mhz', str(vclk_mhz), '--output', remote_journal]
+    if cycle_domain6_once:
+        argv.append('--cycle-domain6-once')
     preflight = remote(BC, argv + ['--preflight-only'], timeout=45)
     require('"preflight_only": true' in preflight.stdout,
             'native-clock module preflight did not complete')
@@ -317,8 +391,48 @@ def trial(kind):
         'dmesg': capture_remote(['dmesg', '--color=never'], RESULTS / f'{name}.dmesg'),
         'pico_status': pico_status(),
     }
-    # An early runner failure can precede its recovery-entry staging. If the
-    # board is still reachable, stage it now before the required cold cycle.
+    if retain and trial_result.get('returncode') == 0:
+        try:
+            after = state()
+            require(after['boot_id'] == current['boot_id'],
+                    'board rebooted during retained trial')
+            require_staged(after)
+            require(after['amdgpu_loaded'], 'test driver disappeared unexpectedly')
+            smu_before_unload = retained_smu(current['boot_id'], vclk_mhz)
+            require(not smu_before_unload['gpu_driver_bound'],
+                    'test driver is bound to the GPU')
+            remote(BC, ['rmmod', 'amdgpu'], timeout=45)
+            unloaded = state()
+            require(unloaded['boot_id'] == current['boot_id'] and
+                    unloaded['kind'] == 'diagnostic' and
+                    not unloaded['amdgpu_loaded'],
+                    'test driver did not unload cleanly')
+            smu_after_unload = retained_smu(current['boot_id'], vclk_mhz)
+            require(not smu_after_unload['amdgpu_module_loaded'] and
+                    not smu_after_unload['gpu_driver_bound'],
+                    'test driver remained active after unload')
+            remote(BC, ['unshare', '-m', '--', 'bash',
+                        f'{KERNEL}/cleanup_unconsumed_diagnostic_boot.sh'],
+                   timeout=25)
+            require_clean_boot(state(), 'diagnostic')
+            stop_timer(timer)
+            report = {'module_kind': kind, 'requested_vclk_mhz': vclk_mhz,
+                      'cycle_domain6_once': cycle_domain6_once,
+                      'boot_id': current['boot_id'],
+                      'trial': trial_result, 'evidence': evidence,
+                      'smu_before_unload': smu_before_unload,
+                      'smu_after_unload': smu_after_unload,
+                      'same_boot_retained': True}
+            report_path = RESULTS / f'{name}.json'
+            report_path.write_text(json.dumps(report, indent=2) + '\n')
+            print(f'SMU clock and domain setup retained on {current["boot_id"]}. '
+                  f'Saved {report_path}', flush=True)
+            return
+        except (OSError, subprocess.TimeoutExpired, ValueError, RuntimeError) as error:
+            print(f'Retained-state checks failed: {error}; '
+                  'recovering by cold cycle.', flush=True)
+    # An early runner or retained-state failure can precede recovery-entry
+    # staging. Keep the Pi PDU timer armed until recovery is verified.
     before_cycle = state()
     require(before_cycle['boot_id'] == current['boot_id'],
             'board rebooted during trial; inspect recovery before proceeding')
@@ -328,7 +442,9 @@ def trial(kind):
         require_staged(before_cycle)
     new = cycle(current['boot_id'], 'diagnostic', timer)
     require_pico(pico_status(), profile)
-    report = {'module_kind': kind, 'prior_boot_id': current['boot_id'],
+    report = {'module_kind': kind, 'requested_vclk_mhz': vclk_mhz,
+              'cycle_domain6_once': cycle_domain6_once,
+              'prior_boot_id': current['boot_id'],
               'new_boot_id': new['boot_id'], 'trial': trial_result,
               'evidence': evidence}
     report_path = RESULTS / f'{name}.json'
@@ -355,6 +471,14 @@ def main():
     commands.add_parser('enter', help='enter diagnostic boot from normal Fedora')
     run = commands.add_parser('trial', help='run one pinned module and return to diagnostics')
     run.add_argument('module_kind')
+    run.add_argument('--vclk-mhz', type=int, choices=(800, 1250), default=1250)
+    run.add_argument('--cycle-domain6-once', action='store_true')
+    retained = commands.add_parser('trial-retain',
+                                   help='keep native VCN SMU state if cleanup passes')
+    retained.add_argument('module_kind')
+    retained.add_argument('--vclk-mhz', type=int, choices=(800, 1250),
+                          default=1250)
+    retained.add_argument('--cycle-domain6-once', action='store_true')
     commands.add_parser('finish', help='restore CS-PASS and normal Fedora')
     args = parser.parse_args()
     try:
@@ -363,7 +487,11 @@ def main():
         elif args.command == 'enter':
             enter()
         elif args.command == 'trial':
-            trial(args.module_kind)
+            trial(args.module_kind, vclk_mhz=args.vclk_mhz,
+                  cycle_domain6_once=args.cycle_domain6_once)
+        elif args.command == 'trial-retain':
+            trial(args.module_kind, retain=True, vclk_mhz=args.vclk_mhz,
+                  cycle_domain6_once=args.cycle_domain6_once)
         else:
             finish()
     except (OSError, subprocess.TimeoutExpired, ValueError, RuntimeError) as error:
